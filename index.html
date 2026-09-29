@@ -678,19 +678,31 @@
                     camera.position.y = PLAYER_HEIGHT;
                 }
 
-                // 축별 이동 및 벽 충돌 감지
+                // 카메라의 현재 방향을 기준으로 월드 이동 벡터 계산 (벽 미끄러짐 효과 구현)
+                const camDir = new THREE.Vector3();
+                camera.getWorldDirection(camDir);
+                camDir.y = 0;
+                camDir.normalize();
+
+                const camRight = new THREE.Vector3();
+                camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
+
+                const worldDelta = new THREE.Vector3();
+                worldDelta.addScaledVector(camRight, -velocity.x * delta);
+                worldDelta.addScaledVector(camDir, -velocity.z * delta);
+
+                // X축 이동 및 충돌 (독립적 처리)
                 const prevX = controls.getObject().position.x;
-                controls.moveRight(-velocity.x * delta);
+                controls.getObject().position.x += worldDelta.x;
                 if (checkCollision()) {
                     controls.getObject().position.x = prevX;
-                    velocity.x = 0;
                 }
 
+                // Z축 이동 및 충돌 (독립적 처리)
                 const prevZ = controls.getObject().position.z;
-                controls.moveForward(-velocity.z * delta);
+                controls.getObject().position.z += worldDelta.z;
                 if (checkCollision()) {
                     controls.getObject().position.z = prevZ;
-                    velocity.z = 0;
                 }
 
                 // 출구 도착 (승리 조건)
