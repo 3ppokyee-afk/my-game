@@ -3,144 +3,93 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D 파쿠르 함정 미로 게임</title>
+    <title>3D 파쿠르 미로 (반응형 & 랭킹)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
-            margin: 0;
-            overflow: hidden;
-            background-color: #020617; /* 짙은 공허 배경 */
-            font-family: 'Inter', sans-serif;
-            user-select: none;
+            margin: 0; overflow: hidden; background-color: #020617; 
+            font-family: 'Inter', sans-serif; user-select: none;
+            -webkit-user-select: none; touch-action: none;
         }
         
         #game-ui {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 10;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 20;
         }
 
+        /* UI 패널 최적화 (비율 수정) */
         .overlay-panel {
-            pointer-events: auto;
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(12px);
-            padding: 2.5rem;
-            border-radius: 1rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            text-align: center;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            color: white;
-            transition: opacity 0.3s ease;
-            max-width: 90%;
-            width: 500px;
+            pointer-events: auto; background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px); padding: 1.5rem; border-radius: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1); text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); color: white;
+            transition: opacity 0.3s ease; 
+            width: 90%; max-width: 400px; /* 너무 넓어지지 않게 고정 */
+            max-height: 85vh; /* 화면 높이를 넘어가지 않게 제한 */
+            overflow-y: auto; /* 내용이 넘치면 스크롤 */
+            display: flex; flex-direction: column; gap: 1rem;
         }
 
-        /* 중앙 에임(십자선) */
+        /* 패널 스크롤바 커스텀 */
+        .overlay-panel::-webkit-scrollbar { width: 6px; }
+        .overlay-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+
         #crosshair {
-            position: absolute;
-            top: 50%; left: 50%;
-            width: 6px; height: 6px;
-            background: rgba(255,255,255,0.9);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
-            z-index: 5;
-            box-shadow: 0 0 6px rgba(0,0,0,0.5);
+            position: absolute; top: 50%; left: 50%; width: 6px; height: 6px;
+            background: rgba(255,255,255,0.9); border-radius: 50%;
+            transform: translate(-50%, -50%); pointer-events: none; z-index: 5;
         }
 
         #hud {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 6;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            padding: 1.5rem;
-            box-sizing: border-box;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 6; display: flex; flex-direction: column;
+            justify-content: space-between; padding: 1.5rem; box-sizing: border-box;
         }
 
-        .stamina-container {
-            width: 240px;
-            background: rgba(15, 23, 42, 0.85);
-            padding: 10px 14px;
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            backdrop-filter: blur(6px);
-        }
-
-        .stamina-bar-bg {
-            width: 100%; height: 12px;
-            background: #1e293b;
-            border-radius: 6px;
-            overflow: hidden;
-            margin-top: 6px;
-            border: 1px solid #334155;
-        }
-
-        .stamina-bar-fill {
-            height: 100%; width: 100%;
-            background: linear-gradient(90deg, #10b981, #34d399);
-            border-radius: 6px;
-            transition: width 0.08s linear, background 0.3s ease;
-        }
+        /* HUD 요소 */
+        .stamina-container { width: 180px; background: rgba(15, 23, 42, 0.85); padding: 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.15); }
+        .stamina-bar-bg { width: 100%; height: 8px; background: #1e293b; border-radius: 4px; margin-top: 6px; overflow: hidden; }
+        .stamina-bar-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #10b981, #34d399); transition: width 0.08s linear; }
         .stamina-bar-fill.exhausted { background: linear-gradient(90deg, #ef4444, #f87171); }
 
-        /* 원형 레이더 미니맵 */
         #minimap-wrapper {
-            width: 160px; height: 160px;
-            border-radius: 50%;
-            border: 3px solid rgba(56, 189, 248, 0.6);
-            background: rgba(10, 15, 30, 0.95);
-            box-shadow: 0 0 20px rgba(56, 189, 248, 0.2), inset 0 0 20px rgba(0,0,0,1);
-            overflow: hidden;
-            position: relative;
+            width: 120px; height: 120px; border-radius: 50%; border: 3px solid rgba(56, 189, 248, 0.6);
+            background: rgba(10, 15, 30, 0.95); overflow: hidden; position: relative; box-shadow: 0 0 15px rgba(56,189,248,0.2);
+            flex-shrink: 0;
         }
+        #minimap-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
-        #minimap-canvas {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-        }
-
-        /* 미니맵 레이더 선 */
-        #minimap-wrapper::before {
-            content: ''; position: absolute;
-            top: 0; left: 50%; width: 1px; height: 100%;
-            background: rgba(56, 189, 248, 0.2); z-index: 1;
-        }
-        #minimap-wrapper::after {
-            content: ''; position: absolute;
-            top: 50%; left: 0; width: 100%; height: 1px;
-            background: rgba(56, 189, 248, 0.2); z-index: 1;
-        }
-
-        /* 추락 시 붉은 화면 깜빡임 */
         #fall-overlay {
-            position: absolute; inset: 0;
-            pointer-events: none;
-            background: rgba(220, 38, 38, 0.5);
-            opacity: 0; transition: opacity 0.15s ease;
-            z-index: 4;
+            position: absolute; inset: 0; pointer-events: none;
+            background: rgba(220, 38, 38, 0.5); opacity: 0; transition: opacity 0.15s ease; z-index: 4;
         }
+
+        /* 모바일 컨트롤 UI */
+        #mobile-controls { position: absolute; inset: 0; pointer-events: none; z-index: 15; display: none; }
+        .touch-zone { position: absolute; top: 0; height: 100%; pointer-events: auto; }
+        #joystick-zone { left: 0; width: 50%; }
+        #look-zone { right: 0; width: 50%; }
+        #joystick-base {
+            position: absolute; width: 100px; height: 100px; background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 50%; transform: translate(-50%, -50%); display: none; pointer-events: none;
+        }
+        #joystick-stick { position: absolute; width: 40px; height: 40px; background: rgba(255, 255, 255, 0.6); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%, -50%); }
         
-        #win-screen { display: none; }
-        
-        /* 모바일 최적화 */
+        #mobile-buttons { position: absolute; right: 20px; bottom: 30px; display: flex; gap: 15px; pointer-events: auto; }
+        .mobile-btn { width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.4); color: white; font-weight: bold; font-size: 13px; display: flex; justify-content: center; align-items: center; user-select: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .mobile-btn.active-toggle { background: rgba(16, 185, 129, 0.6); border-color: #34d399; }
+
+        #ytplayer-container { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; z-index: -100; }
+
         @media (max-width: 768px) {
-            #minimap-wrapper { width: 120px; height: 120px; }
-            .stamina-container { width: 180px; }
-            #hud { padding: 1rem; }
+            #minimap-wrapper { width: 100px; height: 100px; }
+            #pc-instructions { display: none; }
+            .overlay-panel { padding: 1.25rem; }
         }
     </style>
 
-    <!-- Three.js Import -->
     <script type="importmap">
         {
             "imports": {
@@ -152,129 +101,155 @@
 </head>
 <body>
     <div id="fall-overlay"></div>
+    <div id="ytplayer-container"></div>
 
     <div id="hud">
         <div class="flex justify-between items-start w-full">
             <div class="stamina-container shadow-lg">
                 <div class="flex justify-between items-center text-xs font-semibold">
-                    <span class="text-emerald-400 flex items-center gap-1">⚡ 전력 질주 게이지</span>
+                    <span class="text-emerald-400">⚡ 스테미너</span>
                     <span id="stamina-percent" class="text-gray-300">100%</span>
                 </div>
-                <div class="stamina-bar-bg">
-                    <div id="stamina-fill" class="stamina-bar-fill"></div>
-                </div>
-                <div class="text-[10px] text-gray-400 font-normal mt-1 text-center" id="sprint-status-tag">(Shift로 달리기)</div>
+                <div class="stamina-bar-bg"><div id="stamina-fill" class="stamina-bar-fill"></div></div>
             </div>
 
-            <div class="flex flex-col items-end gap-3">
-                <div id="minimap-wrapper">
-                    <canvas id="minimap-canvas" width="160" height="160"></canvas>
-                </div>
-                <div class="bg-slate-900/90 px-4 py-1.5 rounded-full border border-slate-700 text-sm text-sky-300 font-mono text-center w-full shadow-lg">
+            <div class="flex flex-col items-end gap-2">
+                <div id="minimap-wrapper"><canvas id="minimap-canvas" width="120" height="120"></canvas></div>
+                <div class="bg-slate-900/90 px-3 py-1 rounded-full border border-slate-700 text-sm text-sky-300 font-mono shadow-lg text-center w-full min-w-[90px]">
                     ⏱️ <span id="timer-display">00:00</span>
                 </div>
             </div>
         </div>
+        <div id="pc-instructions" class="text-center text-xs text-slate-300 pb-2 bg-slate-900/70 p-2 rounded-lg max-w-md mx-auto border border-slate-700">
+            [W,A,S,D] 이동 | <span class="text-emerald-400">[Shift] 달리기</span> | <span class="text-yellow-400">[Space] 점프</span>
+        </div>
+        <div id="checkpoint-info" class="hidden bg-purple-900/90 px-3 py-1.5 rounded-full border border-purple-500 text-xs text-purple-200 font-bold mt-2 mx-auto text-center shadow-lg w-max transition-opacity">
+            💜 체크포인트 부활: <span id="cp-count">3</span>회 남음
+        </div>
+    </div>
 
-        <div class="text-center text-xs sm:text-sm text-slate-300 pb-2 drop-shadow-lg font-bold bg-slate-900/70 p-2 rounded-lg max-w-2xl mx-auto border border-slate-700">
-            [W,A,S,D] 이동 | <span class="text-emerald-400">[Shift] 달리기</span> | <span class="text-yellow-400">[Space] 점프</span><br/>
-            <span class="text-red-400 text-xs mt-1 block">거대한 미로를 뚫고 출구를 찾으세요. 출구 앞은 공허 함정 구간입니다!</span>
+    <div id="mobile-controls">
+        <div id="joystick-zone" class="touch-zone"></div>
+        <div id="look-zone" class="touch-zone"></div>
+        <div id="joystick-base"><div id="joystick-stick"></div></div>
+        <div id="mobile-buttons">
+            <div id="btn-sprint-mobile" class="mobile-btn">달리기</div>
+            <div id="btn-jump-mobile" class="mobile-btn bg-sky-600/40 border-sky-400">점프</div>
         </div>
     </div>
 
     <div id="game-ui">
-        <div id="start-screen" class="overlay-panel">
-            <h1 class="text-3xl sm:text-4xl font-extrabold mb-3 text-sky-400 tracking-wider">거대 미로 & 파쿠르</h1>
-            <p class="text-sm text-slate-300 mb-5">수많은 갈림길과 막다른 길을 뚫고 빛나는 출구를 찾으세요.</p>
+        <div id="device-screen" class="overlay-panel">
+            <div>
+                <h1 class="text-2xl font-extrabold text-sky-400">공허 파쿠르 미로</h1>
+                <p class="text-xs text-slate-300 mt-1">기기를 선택하고 랭킹에 도전하세요!</p>
+            </div>
             
-            <div class="bg-slate-900/80 p-4 rounded-lg mb-6 text-sm text-left text-slate-200 space-y-2 border border-slate-700">
-                <p><span class="font-bold text-white">W, A, S, D</span> : 이동 및 점프 중 공중 방향전환</p>
-                <p><span class="font-bold text-yellow-400">Spacebar</span> : 점프 (스테미너 소모 없음)</p>
-                <p><span class="font-bold text-emerald-400">Shift</span> : 달리기 (스테미너 소모)</p>
-                <p><span class="font-bold text-slate-400">미니맵</span> : 시야에 보이는 길만 레이더에 표시됩니다.</p>
+            <div class="flex gap-2">
+                <button id="btn-select-pc" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold rounded-lg transition text-sm">💻 PC</button>
+                <button id="btn-select-mobile" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold rounded-lg transition text-sm">📱 모바일</button>
             </div>
 
-            <button id="start-btn" class="px-8 py-3 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg transition-transform active:scale-95 text-lg w-full">
-                미로 진입 (마우스 클릭)
+            <div class="bg-slate-900 rounded-lg p-3 text-left border border-slate-700 flex-1 overflow-y-auto max-h-[140px]">
+                <h3 class="text-emerald-400 font-bold mb-2 text-xs border-b border-slate-700 pb-1 sticky top-0 bg-slate-900">🏆 명예의 전당 (Top 5)</h3>
+                <div id="ranking-list" class="space-y-1">
+                    <!-- 랭킹 렌더링 -->
+                </div>
+            </div>
+
+            <button id="start-btn" class="w-full py-3 bg-gradient-to-r from-sky-600 to-blue-600 text-white font-bold rounded-lg shadow-lg text-sm transition active:scale-95" style="display:none;">
+                게임 시작 (🎵 BGM 재생)
             </button>
         </div>
 
-        <div id="win-screen" class="overlay-panel">
-            <h1 class="text-5xl mb-3">🏆</h1>
-            <h1 class="text-3xl font-extrabold mb-2 text-sky-400">미로 탈출 성공!</h1>
+        <div id="win-screen" class="overlay-panel" style="display: none;">
+            <div>
+                <div class="text-4xl mb-1">🏆</div>
+                <h1 class="text-2xl font-extrabold text-emerald-400">탈출 성공!</h1>
+            </div>
             
-            <div class="bg-slate-900/90 p-4 rounded-lg border border-slate-700 text-left mb-6 text-sm">
-                <p class="text-slate-300">⏱️ 완주 소요 시간: <span id="final-time" class="font-bold text-yellow-300 text-base">0초</span></p>
+            <div class="bg-slate-900 p-3 rounded-lg border border-slate-700 text-left text-sm">
+                <p class="text-slate-300">⏱️ 클리어 시간: <span id="final-time" class="font-bold text-yellow-300 text-base">0초</span></p>
                 <p class="text-slate-300 mt-1">💀 추락 횟수: <span id="death-count" class="font-bold text-red-400 text-base">0회</span></p>
             </div>
 
-            <button onclick="location.reload()" class="px-8 py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg shadow-lg transition-transform active:scale-95 text-lg w-full">
-                새로운 미로 생성하기
+            <input type="text" id="player-name" placeholder="랭킹 등록 이름 (최대 8자)" maxlength="8" class="w-full bg-slate-800 text-white border border-slate-600 rounded p-2 text-center font-bold text-sm outline-none focus:border-sky-500">
+
+            <button id="save-rank-btn" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-lg text-sm transition active:scale-95">
+                기록 저장 & 다시하기
             </button>
         </div>
     </div>
 
     <div id="crosshair"></div>
 
+    <script>
+        window.ytPlayer = null; window.ytPlayerReady = false;
+        var tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        var firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+        function onYouTubeIframeAPIReady() {
+            window.ytPlayer = new YT.Player('ytplayer-container', {
+                height: '100', width: '100', videoId: '3kcElLOMtJs',
+                playerVars: { 'autoplay': 0, 'controls': 0, 'loop': 1, 'playlist': '3kcElLOMtJs', 'rel': 0 },
+                events: { 'onReady': function(event) { event.target.setVolume(25); window.ytPlayerReady = true; } }
+            });
+        }
+    </script>
+
     <script type="module">
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         let camera, scene, renderer, controls;
-        let flashlight, ambientLight;
-        let goalMesh, portalGroup;
-        let gameWon = false;
-        let startTime = null;
+        let flashlight, portalGroup, goalMesh;
+        let isPlaying = false, gameWon = false;
+        let startTime = null, finalTimeInSeconds = 0;
         let falls = 0;
+        let deviceType = null;
 
-        let moveForward = false, moveBackward = false;
-        let moveLeft = false, moveRight = false;
+        // 이동 제어
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         let isSprinting = false;
-
-        // 물리 상수
-        const WALK_SPEED = 22.0;
-        const SPRINT_SPEED = 42.0;
-        const GRAVITY = 90.0; 
-        const JUMP_FORCE = 32.0; 
         
+        // 모바일 제어
+        let joystickVector = { x: 0, y: 0 };
+        let activeTouches = {}, joystickTouchId = null, lookTouchId = null;
+        let joystickBaseX = 0, joystickBaseY = 0; const MAX_JOYSTICK_DIST = 30;
+
+        // 물리 변수
+        const WALK_SPEED = 20.0, SPRINT_SPEED = 38.0, GRAVITY = 85.0, JUMP_FORCE = 28.0;
         const velocity = new THREE.Vector3();
-        const direction = new THREE.Vector3();
-        let prevTime = performance.now();
-        
-        let physicalY = 0; 
-        let canJump = false; 
-        let bobTimer = 0;
+        let prevTime = performance.now(), physicalY = 0, canJump = false, bobTimer = 0;
 
-        const MAX_STAMINA = 100;
-        let stamina = MAX_STAMINA;
-        const STAMINA_DRAIN_RATE = 20;
-        const STAMINA_RECOVERY_RATE = 30;
-        let isExhausted = false;
+        // 체크포인트 변수
+        let checkpointReached = false;
+        let checkpointRespawnsLeft = 3;
+        let activeRespawnPos = new THREE.Vector3();
 
-        // 미로 크기 (홀수 필수)
-        const GRID_ROWS = 31; 
-        const GRID_COLS = 31;
-        const CELL_SIZE = 6.0;         
-        const PLATFORM_SIZE = 2.4; // 좁은 점프 발판 
-        const WALL_HEIGHT = 14.0;      
-        const FLOOR_HEIGHT = 1.0;
-        const PLAYER_HEIGHT = 1.6;     
-        const PLAYER_SIZE = 0.6;       
+        // 스테미너
+        const MAX_STAMINA = 100; let stamina = MAX_STAMINA;
+        const STAMINA_DRAIN_RATE = 20, STAMINA_RECOVERY_RATE = 30; let isExhausted = false;
 
-        let mazeGrid = [];
-        const solidBoxes = []; 
-        let goalBox;
+        // 미로 환경 변수
+        const GRID_ROWS = 31, GRID_COLS = 31;
+        const CELL_SIZE = 6.0, PLATFORM_SIZE = 3.2, WALL_HEIGHT = 14.0, FLOOR_HEIGHT = 1.0;
+        const PLAYER_HEIGHT = 1.6, PLAYER_SIZE = 0.6;
+        let mazeGrid = [], solidBoxes = [], goalBox;
         let startPosWorld = new THREE.Vector3();
 
-        const staminaFill = document.getElementById('stamina-fill');
-        const staminaPercent = document.getElementById('stamina-percent');
-        const timerDisplay = document.getElementById('timer-display');
-        const sprintStatusTag = document.getElementById('sprint-status-tag');
-        const minimapCanvas = document.getElementById('minimap-canvas');
-        const minimapCtx = minimapCanvas.getContext('2d');
-        const fallOverlay = document.getElementById('fall-overlay');
+        function loadRankings() {
+            let ranks = JSON.parse(localStorage.getItem('parkour_ranks')) || [];
+            let html = '';
+            ranks.slice(0, 5).forEach((r, i) => {
+                html += `<div class="text-xs text-slate-300 flex justify-between border-b border-slate-700 py-1.5"><span>${i+1}. ${r.name}</span> <span class="text-yellow-400 font-mono">${r.time}초</span></div>`;
+            });
+            if (!html) html = '<div class="text-xs text-slate-500 py-2 text-center">아직 기록이 없습니다.</div>';
+            document.getElementById('ranking-list').innerHTML = html;
+        }
 
-        // BFS 최단 경로 알고리즘
         function findShortestPathBFS(grid, startR, startC, goalR, goalC) {
             let queue = [{r: startR, c: startC, path: []}];
             let visited = Array.from({length: grid.length}, () => Array(grid[0].length).fill(false));
@@ -283,7 +258,6 @@
             while(queue.length > 0) {
                 let curr = queue.shift();
                 let currPath = [...curr.path, {r: curr.r, c: curr.c}];
-
                 if(curr.r === goalR && curr.c === goalC) return currPath;
 
                 const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
@@ -301,494 +275,348 @@
         }
 
         function generateProceduralMaze(rows, cols) {
-            // 1. 모든 칸을 벽(1)으로 채움
             const grid = Array.from({ length: rows }, () => Array(cols).fill(1));
-            
-            // 2. DFS (Recursive Backtracking) 미로 파기 - 완벽한 미로 생성
             function carveDFS(r, c) {
                 grid[r][c] = 0; 
-                // 상하좌우를 랜덤한 순서로 섞음 (2칸씩 건너뜀)
                 const dirs = [ [-2, 0], [2, 0], [0, -2], [0, 2] ].sort(() => Math.random() - 0.5);
                 for (let [dr, dc] of dirs) {
                     let nr = r + dr, nc = c + dc;
                     if (nr > 0 && nr < rows - 1 && nc > 0 && nc < cols - 1 && grid[nr][nc] === 1) {
-                        grid[r + dr / 2][c + dc / 2] = 0; // 중간 벽 허물기
-                        carveDFS(nr, nc); // 재귀 탐색
+                        grid[r + dr / 2][c + dc / 2] = 0; carveDFS(nr, nc);
                     }
                 }
             }
-            
-            // (1,1)부터 파기 시작
             carveDFS(1, 1);
-            
-            // 3. BFS로 최단 경로 찾기
             const path = findShortestPathBFS(grid, 1, 1, rows - 2, cols - 2);
             
-            // 4. 출구 직전 12칸을 함정 구역(4)으로 지정
-            const trapCount = 12;
+            const trapCount = 10;
             const startIndex = Math.max(1, path.length - 1 - trapCount);
+            const checkpointIndex = Math.max(1, startIndex - 1);
             
-            for(let i = startIndex; i < path.length - 1; i++) {
-                grid[path[i].r][path[i].c] = 4; // 4: 바닥 없는 작은 발판(함정)
+            for(let i = startIndex; i < path.length - 1; i++) grid[path[i].r][path[i].c] = 4;
+            
+            grid[1][1] = 2; grid[rows - 2][cols - 2] = 3;
+            if (grid[path[checkpointIndex].r][path[checkpointIndex].c] !== 2 && grid[path[checkpointIndex].r][path[checkpointIndex].c] !== 3) {
+                grid[path[checkpointIndex].r][path[checkpointIndex].c] = 5; // 체크포인트 블록 생성
             }
-            
-            grid[1][1] = 2; // 시작점 안전지대
-            grid[rows - 2][cols - 2] = 3; // 출구
-
             return grid;
         }
 
         function createBrickTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512; canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-            
-            // 시멘트 줄눈 (Mortar)
-            ctx.fillStyle = '#8e969d';
-            ctx.fillRect(0, 0, 512, 512);
-
-            const bw = 128; 
-            const bh = 64; 
-            const gap = 6; 
-
+            const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d'); ctx.fillStyle = '#8e969d'; ctx.fillRect(0, 0, 512, 512);
+            const bw = 128, bh = 64, gap = 6; 
             for (let y = 0; y < 512; y += bh) {
                 let offset = (y / bh) % 2 === 0 ? 0 : bw / 2;
                 for (let x = -bw; x < 512; x += bw) {
-                    // 자연스러운 붉은색/갈색 벽돌 색상 변형
-                    const r = 110 + Math.random() * 60;
-                    const g = 50 + Math.random() * 30;
-                    const b = 40 + Math.random() * 20;
-                    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-                    
-                    ctx.fillRect(x + offset + gap/2, y + gap/2, bw - gap, bh - gap);
-                    
-                    // 벽돌 질감 (오래되고 거친 느낌)
+                    const r = 110 + Math.random() * 60, g = 50 + Math.random() * 30, b = 40 + Math.random() * 20;
+                    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`; ctx.fillRect(x + offset + gap/2, y + gap/2, bw - gap, bh - gap);
                     for (let n = 0; n < 80; n++) {
                         ctx.fillStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.15)';
-                        const nx = x + offset + gap/2 + Math.random() * (bw - gap);
-                        const ny = y + gap/2 + Math.random() * (bh - gap);
-                        ctx.fillRect(nx, ny, 2 + Math.random()*2, 2 + Math.random()*2);
+                        ctx.fillRect(x + offset + gap/2 + Math.random() * (bw - gap), y + gap/2 + Math.random() * (bh - gap), 2 + Math.random()*2, 2 + Math.random()*2);
                     }
                 }
             }
-
             const texture = new THREE.CanvasTexture(canvas);
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
-            texture.repeat.set(4, 2); // 벽에 맞게 반복
+            texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping; texture.repeat.set(4, 2);
             return texture;
         }
 
         function buildEnvironment() {
-            const brickTexture = createBrickTexture();
-            const wallMat = new THREE.MeshStandardMaterial({ map: brickTexture, roughness: 0.9, metalness: 0.1 });
-            const safeFloorMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 });
-            const trapPlatMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.6 }); // 눈에 띄는 노란색 발판
+            const brickTex = createBrickTexture();
+            const wallMat = new THREE.MeshStandardMaterial({ map: brickTex, roughness: 0.9, metalness: 0.1 });
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 });
+            const trapMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.6 }); 
 
             const wallGeo = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
-            const safeFloorGeo = new THREE.BoxGeometry(CELL_SIZE, FLOOR_HEIGHT, CELL_SIZE); 
-            const trapPlatGeo = new THREE.BoxGeometry(PLATFORM_SIZE, FLOOR_HEIGHT, PLATFORM_SIZE); 
+            const floorGeo = new THREE.BoxGeometry(CELL_SIZE, FLOOR_HEIGHT, CELL_SIZE); 
+            const trapGeo = new THREE.BoxGeometry(PLATFORM_SIZE, FLOOR_HEIGHT, PLATFORM_SIZE); 
 
             for (let r = 0; r < GRID_ROWS; r++) {
                 for (let c = 0; c < GRID_COLS; c++) {
                     const cell = mazeGrid[r][c];
-                    const x = (c - GRID_COLS / 2) * CELL_SIZE;
-                    const z = (r - GRID_ROWS / 2) * CELL_SIZE;
+                    const x = (c - GRID_COLS / 2) * CELL_SIZE, z = (r - GRID_ROWS / 2) * CELL_SIZE;
 
-                    if (cell === 1) { // 1: 벽
-                        const wall = new THREE.Mesh(wallGeo, wallMat);
-                        wall.position.set(x, WALL_HEIGHT / 2, z); 
-                        scene.add(wall);
-                        solidBoxes.push(new THREE.Box3().setFromObject(wall));
-                    } 
-                    else if (cell === 0 || cell === 2 || cell === 3) { // 0,2,3: 꽉 찬 안전한 바닥
-                        const floor = new THREE.Mesh(safeFloorGeo, safeFloorMat);
-                        floor.position.set(x, FLOOR_HEIGHT / 2, z);
-                        scene.add(floor);
-                        solidBoxes.push(new THREE.Box3().setFromObject(floor));
-                        
-                        if (cell === 2) { // 시작 위치 세팅
-                            startPosWorld.set(x, FLOOR_HEIGHT + PLAYER_HEIGHT, z);
-                            controls.getObject().position.copy(startPosWorld);
-                            physicalY = startPosWorld.y;
-                        } 
-                        else if (cell === 3) { // 출구 큐브
-                            portalGroup = new THREE.Group();
-                            portalGroup.position.set(x, FLOOR_HEIGHT + 1.2, z);
-
-                            const goalGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
-                            const goalMaterial = new THREE.MeshStandardMaterial({
-                                color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 1.5
-                            });
-                            goalMesh = new THREE.Mesh(goalGeo, goalMaterial);
-                            portalGroup.add(goalMesh);
-
-                            const goalLight = new THREE.PointLight(0x38bdf8, 2.5, 12);
-                            portalGroup.add(goalLight);
-                            scene.add(portalGroup);
-                            
-                            goalBox = new THREE.Box3().setFromCenterAndSize(
-                                new THREE.Vector3(x, FLOOR_HEIGHT + 1.2, z),
-                                new THREE.Vector3(2.5, 3, 2.5)
-                            );
+                    if (cell === 1) { 
+                        const wall = new THREE.Mesh(wallGeo, wallMat); wall.position.set(x, WALL_HEIGHT / 2, z); 
+                        scene.add(wall); solidBoxes.push(new THREE.Box3().setFromObject(wall));
+                    } else if (cell === 0 || cell === 2 || cell === 3) { 
+                        const floor = new THREE.Mesh(floorGeo, floorMat); floor.position.set(x, FLOOR_HEIGHT / 2, z);
+                        scene.add(floor); solidBoxes.push(new THREE.Box3().setFromObject(floor));
+                        if (cell === 2) { 
+                            startPosWorld.set(x, FLOOR_HEIGHT + PLAYER_HEIGHT, z); camera.position.copy(startPosWorld); physicalY = startPosWorld.y;
+                        } else if (cell === 3) { 
+                            portalGroup = new THREE.Group(); portalGroup.position.set(x, FLOOR_HEIGHT + 1.2, z);
+                            goalMesh = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 1.5 }));
+                            portalGroup.add(goalMesh); portalGroup.add(new THREE.PointLight(0x38bdf8, 2.5, 12));
+                            scene.add(portalGroup); goalBox = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, FLOOR_HEIGHT + 1.2, z), new THREE.Vector3(2.5, 3, 2.5));
                         }
-                    } 
-                    else if (cell === 4) { // 4: 공중에 떠있는 함정 발판
-                        // -0.5 ~ 1.0 무작위 높이 변동
-                        const randomY = (Math.random() * 1.5) - 0.5; 
-                        const plat = new THREE.Mesh(trapPlatGeo, trapPlatMat);
-                        plat.position.set(x, randomY + FLOOR_HEIGHT/2, z);
-                        scene.add(plat);
-                        solidBoxes.push(new THREE.Box3().setFromObject(plat));
+                    } else if (cell === 5) { 
+                        // 체크포인트 안전 발판
+                        const cpMat = new THREE.MeshStandardMaterial({ color: 0x8b5cf6, emissive: 0x6d28d9, emissiveIntensity: 0.5, roughness: 0.4 });
+                        const cpFloor = new THREE.Mesh(floorGeo, cpMat); cpFloor.position.set(x, FLOOR_HEIGHT / 2, z);
+                        scene.add(cpFloor); solidBoxes.push(new THREE.Box3().setFromObject(cpFloor));
+                        scene.add(new THREE.PointLight(0x8b5cf6, 1.5, 10)).position.set(x, FLOOR_HEIGHT + 1, z);
+                    } else if (cell === 4) { 
+                        const plat = new THREE.Mesh(trapGeo, trapMat); plat.position.set(x, (Math.random() * 1.5) - 0.5 + FLOOR_HEIGHT/2, z);
+                        scene.add(plat); solidBoxes.push(new THREE.Box3().setFromObject(plat));
                     }
                 }
             }
         }
 
         function init() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x020617);
-            scene.fog = new THREE.FogExp2(0x020617, 0.045); 
-
+            loadRankings();
+            scene = new THREE.Scene(); scene.background = new THREE.Color(0x020617); scene.fog = new THREE.FogExp2(0x020617, 0.045); 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            scene.add(new THREE.AmbientLight(0x334155, 0.85)); 
 
-            ambientLight = new THREE.AmbientLight(0x334155, 0.85); 
-            scene.add(ambientLight);
-
-            controls = new PointerLockControls(camera, document.body);
-            const startBtn = document.getElementById('start-btn');
-            const startScreen = document.getElementById('start-screen');
-
-            startBtn.addEventListener('click', () => controls.lock());
-            controls.addEventListener('lock', () => {
-                startScreen.style.display = 'none';
-                if (!startTime) startTime = Date.now();
-            });
-            controls.addEventListener('unlock', () => {
-                if (!gameWon) startScreen.style.display = 'flex';
-            });
-            scene.add(controls.getObject());
-
-            // 1인칭 손전등 장착
             flashlight = new THREE.SpotLight(0xfff5e6, 2.5, 45, Math.PI / 4.5, 0.5, 1.2);
-            camera.add(flashlight);
-            flashlight.target = new THREE.Object3D();
-            camera.add(flashlight.target);
-            flashlight.target.position.set(0, 0, -5);
+            camera.add(flashlight); flashlight.target = new THREE.Object3D(); camera.add(flashlight.target); flashlight.target.position.set(0, 0, -5); scene.add(camera);
 
-            document.addEventListener('keydown', (e) => {
-                switch (e.code) {
-                    case 'KeyW': case 'ArrowUp': moveForward = true; break;
-                    case 'KeyA': case 'ArrowLeft': moveLeft = true; break;
-                    case 'KeyS': case 'ArrowDown': moveBackward = true; break;
-                    case 'KeyD': case 'ArrowRight': moveRight = true; break;
-                    case 'ShiftLeft': case 'ShiftRight': isSprinting = true; break;
-                    case 'Space': 
-                        if (canJump) { // 점프 시 스테미너 소모 없음
-                            velocity.y = JUMP_FORCE;
-                            canJump = false; 
-                        }
-                        break;
-                }
-            });
+            mazeGrid = generateProceduralMaze(GRID_ROWS, GRID_COLS); buildEnvironment();
 
-            document.addEventListener('keyup', (e) => {
-                switch (e.code) {
-                    case 'KeyW': case 'ArrowUp': moveForward = false; break;
-                    case 'KeyA': case 'ArrowLeft': moveLeft = false; break;
-                    case 'KeyS': case 'ArrowDown': moveBackward = false; break;
-                    case 'KeyD': case 'ArrowRight': moveRight = false; break;
-                    case 'ShiftLeft': case 'ShiftRight': isSprinting = false; break;
-                }
-            });
+            renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(window.innerWidth, window.innerHeight); document.body.appendChild(renderer.domElement);
+            window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
-            mazeGrid = generateProceduralMaze(GRID_ROWS, GRID_COLS);
-            buildEnvironment();
-
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
-
-            window.addEventListener('resize', onWindowResize);
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function getPlayerAABB(px, py, pz) {
-            const footY = py - PLAYER_HEIGHT;
-            return new THREE.Box3(
-                new THREE.Vector3(px - PLAYER_SIZE / 2, footY, pz - PLAYER_SIZE / 2),
-                new THREE.Vector3(px + PLAYER_SIZE / 2, py + 0.1, pz + PLAYER_SIZE / 2)
-            );
-        }
-
-        function handleFall() {
-            fallOverlay.style.opacity = '1';
-            setTimeout(() => { fallOverlay.style.opacity = '0'; }, 300);
-
-            controls.getObject().position.copy(startPosWorld);
-            physicalY = startPosWorld.y;
-            velocity.set(0, 0, 0);
+            document.getElementById('btn-select-pc').addEventListener('click', () => { deviceType = 'pc'; setupDeviceUI(); });
+            document.getElementById('btn-select-mobile').addEventListener('click', () => { deviceType = 'mobile'; setupDeviceUI(); });
+            document.getElementById('start-btn').addEventListener('click', startGame);
             
-            stamina = MAX_STAMINA;
-            isExhausted = false;
-            falls++;
+            document.getElementById('save-rank-btn').addEventListener('click', () => {
+                let name = document.getElementById('player-name').value || '무명';
+                let ranks = JSON.parse(localStorage.getItem('parkour_ranks')) || [];
+                ranks.push({ name: name, time: finalTimeInSeconds });
+                ranks.sort((a, b) => a.time - b.time);
+                localStorage.setItem('parkour_ranks', JSON.stringify(ranks));
+                location.reload();
+            });
         }
 
-        // 브레슨햄 선 긋기 알고리즘 (시야 차단 로직)
-        function hasLineOfSight(r0, c0, r1, c1, grid) {
-            let dx = Math.abs(c1 - c0);
-            let dy = Math.abs(r1 - r0);
-            let sx = (c0 < c1) ? 1 : -1;
-            let sy = (r0 < r1) ? 1 : -1;
-            let err = dx - dy;
-            let currR = r0;
-            let currC = c0;
+        function setupDeviceUI() {
+            document.getElementById('btn-select-pc').classList.toggle('bg-sky-600', deviceType === 'pc');
+            document.getElementById('btn-select-mobile').classList.toggle('bg-sky-600', deviceType === 'mobile');
+            document.getElementById('start-btn').style.display = 'block';
+        }
+
+        function startGame() {
+            document.getElementById('device-screen').style.display = 'none';
+            isPlaying = true; if (!startTime) startTime = Date.now();
             
-            while (true) {
-                if (currR === r1 && currC === c1) return true; // 도착 성공 (시야 확보)
+            // 체크포인트 상태 초기화
+            checkpointReached = false;
+            checkpointRespawnsLeft = 3;
+            document.getElementById('checkpoint-info').classList.add('hidden');
+            document.getElementById('checkpoint-info').classList.remove('opacity-50');
+            document.getElementById('checkpoint-info').innerHTML = '💜 체크포인트 부활: <span id="cp-count">3</span>회 남음';
+
+            if(window.ytPlayerReady && window.ytPlayer) window.ytPlayer.playVideo();
+
+            if(deviceType === 'pc') {
+                controls = new PointerLockControls(camera, document.body);
+                controls.addEventListener('unlock', () => { if(!gameWon) { isPlaying = false; document.getElementById('device-screen').style.display = 'flex'; if(window.ytPlayer) window.ytPlayer.pauseVideo(); }});
+                controls.lock();
                 
-                // 중간에 벽을 만나면 차단
-                if (grid[currR][currC] === 1 && (currR !== r0 || currC !== c0)) return false; 
-                
-                let e2 = 2 * err;
-                if (e2 > -dy) { err -= dy; currC += sx; }
-                if (e2 < dx) { err += dx; currR += sy; }
+                document.addEventListener('keydown', (e) => {
+                    if(!isPlaying) return;
+                    switch(e.code) { case 'KeyW': moveForward=true; break; case 'KeyA': moveLeft=true; break; case 'KeyS': moveBackward=true; break; case 'KeyD': moveRight=true; break; case 'ShiftLeft': isSprinting=true; break; case 'Space': if(canJump) { velocity.y = JUMP_FORCE; canJump = false; } break; }
+                });
+                document.addEventListener('keyup', (e) => { switch(e.code) { case 'KeyW': moveForward=false; break; case 'KeyA': moveLeft=false; break; case 'KeyS': moveBackward=false; break; case 'KeyD': moveRight=false; break; case 'ShiftLeft': isSprinting=false; break; }});
+            } else {
+                document.getElementById('mobile-controls').style.display = 'block'; document.getElementById('crosshair').style.display = 'block';
+                setupMobileTouch();
             }
         }
 
-        function updateMinimap() {
-            const size = minimapCanvas.width;
-            const cx = size / 2;
-            const cy = size / 2;
-            const scale = 3.2; // 줌인 배율
-            const p = controls.getObject().position;
+        function setupMobileTouch() {
+            const base = document.getElementById('joystick-base'), stick = document.getElementById('joystick-stick');
+            const btnJ = document.getElementById('btn-jump-mobile'), btnS = document.getElementById('btn-sprint-mobile');
 
-            // 3D 월드 좌표 -> 그리드 좌표 변환
-            const playerGridC = Math.round(p.x / CELL_SIZE) + Math.floor(GRID_COLS / 2);
-            const playerGridR = Math.round(p.z / CELL_SIZE) + Math.floor(GRID_ROWS / 2);
-
-            minimapCtx.clearRect(0, 0, size, size);
-            minimapCtx.save();
-            
-            // 미니맵 중심을 플레이어에 맞추고 시야 방향으로 회전
-            minimapCtx.translate(cx, cy);
-            const camDir = new THREE.Vector3();
-            camera.getWorldDirection(camDir);
-            const angle = Math.atan2(camDir.x, -camDir.z);
-            minimapCtx.rotate(angle); 
-            minimapCtx.translate(-p.x * scale, -p.z * scale);
-
-            const renderDistGrid = 8; // 표시 반경 8칸
-
-            for (let r = 0; r < GRID_ROWS; r++) {
-                for (let c = 0; c < GRID_COLS; c++) {
-                    // 거리 체크 
-                    if (Math.abs(r - playerGridR) > renderDistGrid || Math.abs(c - playerGridC) > renderDistGrid) continue;
-
-                    // 시야 차단 (Line of Sight) 체크
-                    if (!hasLineOfSight(playerGridR, playerGridC, r, c, mazeGrid)) continue;
-
-                    const x = (c - GRID_COLS / 2) * CELL_SIZE;
-                    const z = (r - GRID_ROWS / 2) * CELL_SIZE;
-
-                    if (mazeGrid[r][c] === 1) { // 벽
-                        minimapCtx.fillStyle = '#64748b'; 
-                        minimapCtx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale);
-                    } else if (mazeGrid[r][c] === 4) { // 함정 (작은 노란색)
-                        minimapCtx.fillStyle = '#f59e0b'; 
-                        minimapCtx.fillRect((x - PLATFORM_SIZE/2) * scale, (z - PLATFORM_SIZE/2) * scale, PLATFORM_SIZE * scale, PLATFORM_SIZE * scale);
-                    } else { // 안전 바닥 (초록)
-                        minimapCtx.fillStyle = '#10b981'; 
-                        minimapCtx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale);
+            document.addEventListener('touchstart', (e) => {
+                if(!isPlaying) return; if(e.target.tagName !== 'BUTTON' && !e.target.classList.contains('mobile-btn')) e.preventDefault();
+                for(let i=0; i<e.changedTouches.length; i++) {
+                    let t = e.changedTouches[i];
+                    if(t.target === btnJ) { if(canJump) { velocity.y = JUMP_FORCE; canJump = false; } continue; }
+                    if(t.target === btnS) { isSprinting = !isSprinting; btnS.classList.toggle('active-toggle'); continue; }
+                    if(t.clientX < window.innerWidth/2 && !joystickTouchId) {
+                        joystickTouchId = t.identifier; joystickBaseX = t.clientX; joystickBaseY = t.clientY;
+                        base.style.display = 'block'; base.style.left = `${joystickBaseX}px`; base.style.top = `${joystickBaseY}px`; stick.style.transform = `translate(-50%, -50%)`;
+                    } else if(t.clientX >= window.innerWidth/2 && !lookTouchId) {
+                        lookTouchId = t.identifier; activeTouches[t.identifier] = { x: t.clientX, y: t.clientY };
                     }
                 }
+            }, {passive: false});
+
+            document.addEventListener('touchmove', (e) => {
+                if(!isPlaying) return; e.preventDefault();
+                for(let i=0; i<e.changedTouches.length; i++) {
+                    let t = e.changedTouches[i];
+                    if(t.identifier === joystickTouchId) {
+                        let dx = t.clientX - joystickBaseX, dy = t.clientY - joystickBaseY, dist = Math.sqrt(dx*dx + dy*dy);
+                        if(dist > MAX_JOYSTICK_DIST) { dx = (dx/dist)*MAX_JOYSTICK_DIST; dy = (dy/dist)*MAX_JOYSTICK_DIST; }
+                        stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+                        joystickVector.x = dx / MAX_JOYSTICK_DIST; joystickVector.y = dy / MAX_JOYSTICK_DIST;
+                    } else if(t.identifier === lookTouchId) {
+                        let last = activeTouches[t.identifier], mx = t.clientX - last.x, my = t.clientY - last.y;
+                        let euler = new THREE.Euler(0,0,0,'YXZ'); euler.setFromQuaternion(camera.quaternion);
+                        euler.y -= mx * 0.005; euler.x -= my * 0.005; euler.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, euler.x));
+                        camera.quaternion.setFromEuler(euler); activeTouches[t.identifier] = { x: t.clientX, y: t.clientY };
+                    }
+                }
+            }, {passive: false});
+
+            document.addEventListener('touchend', (e) => {
+                for(let i=0; i<e.changedTouches.length; i++) {
+                    let t = e.changedTouches[i];
+                    if(t.identifier === joystickTouchId) { joystickTouchId = null; joystickVector = {x:0, y:0}; base.style.display = 'none'; }
+                    else if(t.identifier === lookTouchId) { lookTouchId = null; delete activeTouches[t.identifier]; }
+                }
+            });
+        }
+
+        function getPlayerAABB(px, py, pz) { return new THREE.Box3(new THREE.Vector3(px - PLAYER_SIZE/2, py - PLAYER_HEIGHT, pz - PLAYER_SIZE/2), new THREE.Vector3(px + PLAYER_SIZE/2, py + 0.1, pz + PLAYER_SIZE/2)); }
+        
+        function hasLineOfSight(r0, c0, r1, c1, grid) {
+            let dx = Math.abs(c1 - c0), dy = Math.abs(r1 - r0), sx = (c0 < c1) ? 1 : -1, sy = (r0 < r1) ? 1 : -1, err = dx - dy, currR = r0, currC = c0;
+            while (true) {
+                if (currR === r1 && currC === c1) return true; 
+                if (grid[currR][currC] === 1 && (currR !== r0 || currC !== c0)) return false; 
+                let e2 = 2 * err; if (e2 > -dy) { err -= dy; currC += sx; } if (e2 < dx) { err += dx; currR += sy; }
             }
+        }
 
-            if (portalGroup) {
-                minimapCtx.fillStyle = '#38bdf8';
-                minimapCtx.beginPath();
-                minimapCtx.arc(portalGroup.position.x * scale, portalGroup.position.z * scale, 2.5 * scale, 0, Math.PI * 2);
-                minimapCtx.fill();
+        function drawMinimap() {
+            const canvas = document.getElementById('minimap-canvas');
+            const ctx = canvas.getContext('2d');
+            const scale = 3.2, cx = canvas.width / 2, cy = canvas.height / 2;
+            const playerGridC = Math.round(camera.position.x / CELL_SIZE) + Math.floor(GRID_COLS / 2), playerGridR = Math.round(camera.position.z / CELL_SIZE) + Math.floor(GRID_ROWS / 2);
+            
+            ctx.clearRect(0,0,canvas.width,canvas.height); ctx.save(); ctx.translate(cx, cy);
+            const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir); ctx.rotate(Math.atan2(camDir.x, -camDir.z)); ctx.translate(-camera.position.x * scale, -camera.position.z * scale);
+            
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    if (Math.abs(r - playerGridR) > 8 || Math.abs(c - playerGridC) > 8) continue;
+                    if (!hasLineOfSight(playerGridR, playerGridC, r, c, mazeGrid)) continue;
+                    const x = (c - GRID_COLS / 2) * CELL_SIZE, z = (r - GRID_ROWS / 2) * CELL_SIZE;
+                    if (mazeGrid[r][c] === 1) { ctx.fillStyle = '#64748b'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); } 
+                    else if (mazeGrid[r][c] === 5) { ctx.fillStyle = '#8b5cf6'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); }
+                    else if (mazeGrid[r][c] === 4) { ctx.fillStyle = '#f59e0b'; ctx.fillRect((x - PLATFORM_SIZE/2) * scale, (z - PLATFORM_SIZE/2) * scale, PLATFORM_SIZE * scale, PLATFORM_SIZE * scale); } 
+                    else { ctx.fillStyle = '#10b981'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); }
+                }
             }
-
-            minimapCtx.restore();
-
-            // 중앙 고정 십자 포인터
-            minimapCtx.save();
-            minimapCtx.translate(cx, cy);
-            minimapCtx.fillStyle = '#ffffff';
-            minimapCtx.beginPath();
-            minimapCtx.moveTo(0, -6);
-            minimapCtx.lineTo(-5, 5);
-            minimapCtx.lineTo(5, 5);
-            minimapCtx.closePath();
-            minimapCtx.fill();
-            minimapCtx.restore();
+            if (portalGroup) { ctx.fillStyle = '#38bdf8'; ctx.beginPath(); ctx.arc(portalGroup.position.x * scale, portalGroup.position.z * scale, 2.5 * scale, 0, Math.PI * 2); ctx.fill(); }
+            ctx.restore(); ctx.save(); ctx.translate(cx, cy); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(-5, 5); ctx.lineTo(5, 5); ctx.fill(); ctx.restore();
         }
 
         function animate() {
-            requestAnimationFrame(animate);
-            if (gameWon) return;
+            requestAnimationFrame(animate); if (gameWon) return;
+            const time = performance.now(), delta = Math.min((time - prevTime) / 1000, 0.1);
 
-            const time = performance.now();
-            const delta = Math.min((time - prevTime) / 1000, 0.1); // 프레임 저하 보정 한도 0.1s
-
-            if (controls.isLocked) {
-                // UI 타이머 업데이트
+            if (isPlaying) {
                 if (startTime) {
                     const elapsed = Math.floor((Date.now() - startTime) / 1000);
-                    const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
-                    const secs = String(elapsed % 60).padStart(2, '0');
-                    timerDisplay.innerText = `${mins}:${secs}`;
+                    document.getElementById('timer-display').innerText = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
                 }
 
-                direction.z = Number(moveForward) - Number(moveBackward);
-                direction.x = Number(moveRight) - Number(moveLeft);
-                direction.normalize(); // 대각선 이동 속도 보정
-                const isMoving = (moveForward || moveBackward || moveLeft || moveRight);
+                let inputX = deviceType === 'pc' ? Number(moveRight) - Number(moveLeft) : joystickVector.x;
+                let inputZ = deviceType === 'pc' ? Number(moveForward) - Number(moveBackward) : -joystickVector.y;
+                const length = Math.sqrt(inputX*inputX + inputZ*inputZ); if (length > 1) { inputX /= length; inputZ /= length; }
+                const isMoving = length > 0.05;
 
-                // 스테미너: 오직 달리기 시에만 깎임
+                // 맵 좌표 계산 및 체크포인트 도달 확인
+                const pGridC = Math.round(camera.position.x / CELL_SIZE) + Math.floor(GRID_COLS / 2);
+                const pGridR = Math.round(camera.position.z / CELL_SIZE) + Math.floor(GRID_ROWS / 2);
+                
+                if (mazeGrid[pGridR] && mazeGrid[pGridR][pGridC] === 5 && !checkpointReached) {
+                    checkpointReached = true;
+                    activeRespawnPos.copy(camera.position); activeRespawnPos.y = FLOOR_HEIGHT + PLAYER_HEIGHT;
+                    document.getElementById('checkpoint-info').classList.remove('hidden');
+                    
+                    const msg = document.createElement('div');
+                    msg.innerText = "체크포인트 도달! (이속 35% 증가 ⚡)";
+                    msg.className = "absolute top-1/4 left-1/2 transform -translate-x-1/2 text-purple-300 font-extrabold text-xl md:text-2xl drop-shadow-lg z-50 animate-bounce bg-slate-900/90 px-5 py-2 rounded-full border border-purple-500";
+                    document.body.appendChild(msg);
+                    setTimeout(() => msg.remove(), 2500);
+                }
+
+                // 체크포인트 도달 시 점프맵 구간에서 이동 속도 35% 가속
+                let speedMultiplier = checkpointReached ? 1.35 : 1.0;
+
                 const wantsToSprint = isSprinting && isMoving;
-                if (wantsToSprint && !isExhausted && stamina > 0) {
-                    stamina -= STAMINA_DRAIN_RATE * delta;
-                    if (stamina <= 0) { stamina = 0; isExhausted = true; }
-                } else {
-                    stamina += STAMINA_RECOVERY_RATE * delta;
-                    if (stamina >= MAX_STAMINA) stamina = MAX_STAMINA;
-                    if (isExhausted && stamina >= 30) isExhausted = false; 
-                }
+                if (wantsToSprint && !isExhausted && stamina > 0) { stamina -= STAMINA_DRAIN_RATE * delta; if (stamina <= 0) { stamina = 0; isExhausted = true; } } 
+                else { stamina += STAMINA_RECOVERY_RATE * delta; if (stamina >= MAX_STAMINA) stamina = MAX_STAMINA; if (isExhausted && stamina >= 30) isExhausted = false; }
+                if(isExhausted && deviceType === 'mobile' && isSprinting) { isSprinting = false; document.getElementById('btn-sprint-mobile').classList.remove('active-toggle'); }
 
-                const currentlySprinting = wantsToSprint && !isExhausted && stamina > 0;
-                const currentMoveSpeed = currentlySprinting ? SPRINT_SPEED : WALK_SPEED;
+                const currentlySprinting = wantsToSprint && !isExhausted && stamina > 0; 
+                const currentMoveSpeed = (currentlySprinting ? SPRINT_SPEED : WALK_SPEED) * speedMultiplier;
+                document.getElementById('stamina-fill').style.width = `${Math.round(stamina)}%`;
+                document.getElementById('stamina-percent').innerText = `${Math.round(stamina)}%`;
+                if(isExhausted) document.getElementById('stamina-fill').classList.add('exhausted'); else document.getElementById('stamina-fill').classList.remove('exhausted');
 
-                // UI 반영
-                staminaPercent.innerText = `${Math.round(stamina)}%`;
-                staminaFill.style.width = `${Math.round(stamina)}%`;
-                
-                if (isExhausted) {
-                    staminaFill.classList.add('exhausted');
-                    sprintStatusTag.innerText = "⚠️ 탈진 상태!";
-                    sprintStatusTag.className = "text-[10px] text-red-400 font-bold mt-1 text-center";
-                } else {
-                    staminaFill.classList.remove('exhausted');
-                    sprintStatusTag.innerText = currentlySprinting ? "⚡ 달리는 중" : "(Shift로 달리기)";
-                    sprintStatusTag.className = currentlySprinting ? "text-[10px] text-emerald-400 font-bold mt-1 text-center" : "text-[10px] text-gray-400 font-normal mt-1 text-center";
-                }
+                velocity.x -= velocity.x * 10.0 * delta; velocity.z -= velocity.z * 10.0 * delta;
+                if (isMoving) { velocity.z -= inputZ * currentMoveSpeed * delta; velocity.x -= inputX * currentMoveSpeed * delta; }
 
-                // 감속 마찰 적용
-                velocity.x -= velocity.x * 10.0 * delta;
-                velocity.z -= velocity.z * 10.0 * delta;
-                
-                if (isMoving) {
-                    velocity.z -= direction.z * currentMoveSpeed * delta;
-                    velocity.x -= direction.x * currentMoveSpeed * delta;
-                }
-
-                // 1. 수직 Y축 중력 및 충돌 검사
-                velocity.y -= GRAVITY * delta;
-                const nextY = physicalY + velocity.y * delta;
-                
-                let px = controls.getObject().position.x;
-                let pz = controls.getObject().position.z;
-                let collidedY = false;
-
+                velocity.y -= GRAVITY * delta; const nextY = physicalY + velocity.y * delta;
+                let px = camera.position.x, pz = camera.position.z, collidedY = false;
                 const boxY = getPlayerAABB(px, nextY, pz);
                 for (let box of solidBoxes) {
                     if (boxY.intersectsBox(box)) {
-                        if (velocity.y < 0) { // 떨어지는 중 바닥 착지
-                            physicalY = box.max.y + PLAYER_HEIGHT;
-                            velocity.y = 0;
-                            canJump = true;
-                            collidedY = true;
-                        } else if (velocity.y > 0) { // 점프 중 천장에 박음
-                            physicalY = box.min.y + PLAYER_HEIGHT - 0.1;
-                            velocity.y = 0;
-                            collidedY = true;
-                        }
-                        break;
+                        if (velocity.y < 0) { physicalY = box.max.y + PLAYER_HEIGHT; velocity.y = 0; canJump = true; collidedY = true; } 
+                        else if (velocity.y > 0) { physicalY = box.min.y + PLAYER_HEIGHT - 0.1; velocity.y = 0; collidedY = true; } break;
                     }
                 }
                 if (!collidedY) { physicalY = nextY; canJump = false; }
 
-                // 머리 흔들림 (Head-Bobbing)
-                let bobOffset = 0;
-                if (isMoving && canJump) {
-                    bobTimer += delta * (currentlySprinting ? 14 : 9);
-                    bobOffset = Math.sin(bobTimer) * (currentlySprinting ? 0.08 : 0.04);
-                }
-                controls.getObject().position.y = physicalY + bobOffset;
+                let bobOffset = 0; if (isMoving && canJump) { bobTimer += delta * (currentlySprinting ? 14 : 9); bobOffset = Math.sin(bobTimer) * (currentlySprinting ? 0.08 : 0.04); }
+                camera.position.y = physicalY + bobOffset;
 
-                // 2. 수평 X/Z축 이동 및 벽 미끄러짐(Sliding) 처리
-                const camDir = new THREE.Vector3();
-                camera.getWorldDirection(camDir);
-                camDir.y = 0; camDir.normalize();
+                const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir); camDir.y = 0; camDir.normalize();
+                const camRight = new THREE.Vector3().crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
+                const deltaX = (-camRight.x * velocity.x - camDir.x * velocity.z) * delta, deltaZ = (-camRight.z * velocity.x - camDir.z * velocity.z) * delta;
 
-                const camRight = new THREE.Vector3();
-                camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
+                camera.position.x += deltaX; px = camera.position.x;
+                for (let box of solidBoxes) { if (getPlayerAABB(px, physicalY + 0.1, pz).intersectsBox(box)) { camera.position.x -= deltaX; px = camera.position.x; break; } }
+                camera.position.z += deltaZ; pz = camera.position.z;
+                for (let box of solidBoxes) { if (getPlayerAABB(px, physicalY + 0.1, pz).intersectsBox(box)) { camera.position.z -= deltaZ; pz = camera.position.z; break; } }
 
-                const deltaX = (-camRight.x * velocity.x - camDir.x * velocity.z) * delta;
-                const deltaZ = (-camRight.z * velocity.x - camDir.z * velocity.z) * delta;
-
-                // X 충돌 검사
-                controls.getObject().position.x += deltaX;
-                px = controls.getObject().position.x;
-                const pBoxX = getPlayerAABB(px, physicalY + 0.1, pz); // 문지방에 안 걸리도록 Y살짝 올림
-                for (let box of solidBoxes) {
-                    if (pBoxX.intersectsBox(box)) {
-                        controls.getObject().position.x -= deltaX; // 충돌 시 롤백
-                        px = controls.getObject().position.x;
-                        break;
-                    }
-                }
-
-                // Z 충돌 검사
-                controls.getObject().position.z += deltaZ;
-                pz = controls.getObject().position.z;
-                const pBoxZ = getPlayerAABB(px, physicalY + 0.1, pz);
-                for (let box of solidBoxes) {
-                    if (pBoxZ.intersectsBox(box)) {
-                        controls.getObject().position.z -= deltaZ; // 충돌 시 롤백
-                        pz = controls.getObject().position.z;
-                        break;
-                    }
-                }
-
-                // 추락 판정
-                if (physicalY < -10) handleFall();
-
-                // 출구 판정
-                if (goalBox && getPlayerAABB(px, physicalY, pz).intersectsBox(goalBox)) {
-                    gameWon = true;
-                    controls.unlock();
-                    document.getElementById('start-screen').style.display = 'none';
-                    document.getElementById('win-screen').style.display = 'flex';
+                if (physicalY < -10) { 
+                    document.getElementById('fall-overlay').style.opacity = '1'; setTimeout(() => document.getElementById('fall-overlay').style.opacity = '0', 300);
                     
-                    const elapsed = Math.floor((Date.now() - startTime) / 1000);
-                    document.getElementById('final-time').innerText = `${elapsed}초`;
-                    document.getElementById('death-count').innerText = `${falls}회`;
+                    if (checkpointReached && checkpointRespawnsLeft > 0) {
+                        // 체크포인트 부활
+                        camera.position.copy(activeRespawnPos); physicalY = activeRespawnPos.y;
+                        checkpointRespawnsLeft--;
+                        document.getElementById('cp-count').innerText = checkpointRespawnsLeft;
+                        if(checkpointRespawnsLeft === 0) {
+                            document.getElementById('checkpoint-info').classList.add('opacity-50');
+                            document.getElementById('checkpoint-info').innerHTML = '체크포인트 모두 소진됨 💀';
+                        }
+                    } else {
+                        // 시작 지점 부활 (체크포인트 소진 시)
+                        camera.position.copy(startPosWorld); physicalY = startPosWorld.y; 
+                        checkpointReached = false; checkpointRespawnsLeft = 3;
+                        document.getElementById('checkpoint-info').classList.add('hidden');
+                    }
+                    
+                    velocity.set(0,0,0); stamina = MAX_STAMINA; isExhausted = false; falls++;
                 }
 
-                updateMinimap();
+                if (goalBox && getPlayerAABB(px, physicalY, pz).intersectsBox(goalBox)) {
+                    gameWon = true; isPlaying = false; if(deviceType === 'pc') controls.unlock();
+                    document.getElementById('mobile-controls').style.display = 'none'; document.getElementById('win-screen').style.display = 'flex';
+                    if(window.ytPlayer) window.ytPlayer.pauseVideo();
+                    finalTimeInSeconds = Math.floor((Date.now() - startTime) / 1000);
+                    document.getElementById('final-time').innerText = `${finalTimeInSeconds}초`; document.getElementById('death-count').innerText = `${falls}회`;
+                }
+                drawMinimap();
             }
-
-            // 출구 큐브 회전 애니메이션
-            if (portalGroup && goalMesh) {
-                goalMesh.rotation.x += 0.02;
-                goalMesh.rotation.y += 0.03;
-            }
-
-            prevTime = time;
-            renderer.render(scene, camera);
+            if (portalGroup && goalMesh) { goalMesh.rotation.x += 0.02; goalMesh.rotation.y += 0.03; }
+            prevTime = time; renderer.render(scene, camera);
         }
 
-        init();
-        animate();
+        init(); animate();
     </script>
 </body>
 </html>
