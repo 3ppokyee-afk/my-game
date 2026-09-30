@@ -2,15 +2,15 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D 미로 탈출 게임</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D 파쿠르 함정 미로 게임</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #000;
+            background-color: #020617; /* 짙은 공허 배경 */
             font-family: 'Inter', sans-serif;
             user-select: none;
         }
@@ -29,7 +29,7 @@
         .overlay-panel {
             pointer-events: auto;
             background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(8px);
+            backdrop-filter: blur(12px);
             padding: 2.5rem;
             border-radius: 1rem;
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -37,18 +37,21 @@
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             color: white;
             transition: opacity 0.3s ease;
+            max-width: 90%;
+            width: 500px;
         }
 
+        /* 중앙 에임(십자선) */
         #crosshair {
             position: absolute;
             top: 50%; left: 50%;
-            width: 8px; height: 8px;
-            background: rgba(255, 255, 255, 0.7);
+            width: 6px; height: 6px;
+            background: rgba(255,255,255,0.9);
             border-radius: 50%;
             transform: translate(-50%, -50%);
             pointer-events: none;
             z-index: 5;
-            box-shadow: 0 0 6px rgba(255,255,255,0.8);
+            box-shadow: 0 0 6px rgba(0,0,0,0.5);
         }
 
         #hud {
@@ -59,23 +62,21 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            padding: 20px;
+            padding: 1.5rem;
             box-sizing: border-box;
         }
 
         .stamina-container {
-            width: 260px;
-            background: rgba(15, 23, 42, 0.75);
+            width: 240px;
+            background: rgba(15, 23, 42, 0.85);
             padding: 10px 14px;
             border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.15);
             backdrop-filter: blur(6px);
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
         }
 
         .stamina-bar-bg {
-            width: 100%;
-            height: 12px;
+            width: 100%; height: 12px;
             background: #1e293b;
             border-radius: 6px;
             overflow: hidden;
@@ -84,40 +85,62 @@
         }
 
         .stamina-bar-fill {
-            height: 100%;
-            width: 100%;
+            height: 100%; width: 100%;
             background: linear-gradient(90deg, #10b981, #34d399);
             border-radius: 6px;
             transition: width 0.08s linear, background 0.3s ease;
         }
+        .stamina-bar-fill.exhausted { background: linear-gradient(90deg, #ef4444, #f87171); }
 
-        .stamina-bar-fill.exhausted {
-            background: linear-gradient(90deg, #ef4444, #f87171);
+        /* 원형 레이더 미니맵 */
+        #minimap-wrapper {
+            width: 160px; height: 160px;
+            border-radius: 50%;
+            border: 3px solid rgba(56, 189, 248, 0.6);
+            background: rgba(10, 15, 30, 0.95);
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.2), inset 0 0 20px rgba(0,0,0,1);
+            overflow: hidden;
+            position: relative;
         }
 
         #minimap-canvas {
-            width: 130px;
-            height: 130px;
-            border-radius: 50%;
-            border: 2px solid rgba(59, 130, 246, 0.6);
-            background: rgba(10, 15, 30, 0.85);
-            box-shadow: 0 0 14px rgba(59, 130, 246, 0.3);
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
         }
 
-        #exhaustion-vignette {
-            position: absolute;
-            inset: 0;
+        /* 미니맵 레이더 선 */
+        #minimap-wrapper::before {
+            content: ''; position: absolute;
+            top: 0; left: 50%; width: 1px; height: 100%;
+            background: rgba(56, 189, 248, 0.2); z-index: 1;
+        }
+        #minimap-wrapper::after {
+            content: ''; position: absolute;
+            top: 50%; left: 0; width: 100%; height: 1px;
+            background: rgba(56, 189, 248, 0.2); z-index: 1;
+        }
+
+        /* 추락 시 붉은 화면 깜빡임 */
+        #fall-overlay {
+            position: absolute; inset: 0;
             pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-            box-shadow: inset 0 0 100px 30px rgba(239, 68, 68, 0.45);
+            background: rgba(220, 38, 38, 0.5);
+            opacity: 0; transition: opacity 0.15s ease;
             z-index: 4;
         }
         
         #win-screen { display: none; }
+        
+        /* 모바일 최적화 */
+        @media (max-width: 768px) {
+            #minimap-wrapper { width: 120px; height: 120px; }
+            .stamina-container { width: 180px; }
+            #hud { padding: 1rem; }
+        }
     </style>
 
-    <!-- Three.js 모듈 및 애드온 로드를 위한 Import Map -->
+    <!-- Three.js Import -->
     <script type="importmap">
         {
             "imports": {
@@ -128,80 +151,69 @@
     </script>
 </head>
 <body>
+    <div id="fall-overlay"></div>
 
-    <!-- 탈진 시 비네팅 경고 효과 -->
-    <div id="exhaustion-vignette"></div>
-
-    <!-- 인게임 HUD -->
     <div id="hud">
         <div class="flex justify-between items-start w-full">
-            <!-- 스테미너 바 -->
-            <div class="stamina-container">
+            <div class="stamina-container shadow-lg">
                 <div class="flex justify-between items-center text-xs font-semibold">
-                    <span class="text-emerald-400 flex items-center gap-1">
-                        ⚡ 스테미너 <span id="sprint-status-tag" class="text-[10px] text-gray-400 font-normal">(Shift 달리기)</span>
-                    </span>
+                    <span class="text-emerald-400 flex items-center gap-1">⚡ 전력 질주 게이지</span>
                     <span id="stamina-percent" class="text-gray-300">100%</span>
                 </div>
                 <div class="stamina-bar-bg">
                     <div id="stamina-fill" class="stamina-bar-fill"></div>
                 </div>
-                <div id="exhaustion-text" class="text-[11px] text-red-400 font-bold mt-1 hidden text-center">
-                    ⚠️ 탈진 상태! 회복될 때까지 달릴 수 없습니다.
-                </div>
+                <div class="text-[10px] text-gray-400 font-normal mt-1 text-center" id="sprint-status-tag">(Shift로 달리기)</div>
             </div>
 
-            <!-- 미니맵 & 타이머 -->
-            <div class="flex flex-col items-end gap-2">
-                <canvas id="minimap-canvas" width="130" height="130"></canvas>
-                <div class="bg-slate-900/80 px-3 py-1 rounded-full border border-slate-700 text-xs text-blue-300 font-mono">
+            <div class="flex flex-col items-end gap-3">
+                <div id="minimap-wrapper">
+                    <canvas id="minimap-canvas" width="160" height="160"></canvas>
+                </div>
+                <div class="bg-slate-900/90 px-4 py-1.5 rounded-full border border-slate-700 text-sm text-sky-300 font-mono text-center w-full shadow-lg">
                     ⏱️ <span id="timer-display">00:00</span>
                 </div>
             </div>
         </div>
 
-        <div class="text-center text-xs text-slate-400 pb-2 drop-shadow">
-            [Shift] 달리기 | [W/A/S/D] 이동 | [마우스] 시점 전환 | [ESC] 일시정지
+        <div class="text-center text-xs sm:text-sm text-slate-300 pb-2 drop-shadow-lg font-bold bg-slate-900/70 p-2 rounded-lg max-w-2xl mx-auto border border-slate-700">
+            [W,A,S,D] 이동 | <span class="text-emerald-400">[Shift] 달리기</span> | <span class="text-yellow-400">[Space] 점프</span><br/>
+            <span class="text-red-400 text-xs mt-1 block">거대한 미로를 뚫고 출구를 찾으세요. 출구 앞은 공허 함정 구간입니다!</span>
         </div>
     </div>
 
     <div id="game-ui">
-        <!-- 시작 화면 -->
         <div id="start-screen" class="overlay-panel">
-            <h1 class="text-4xl font-extrabold mb-3 text-blue-400 tracking-wider">3D 미로 탈출</h1>
-            <p class="text-sm text-gray-300 mb-5">어두운 미로를 뚫고 탈출 포털(녹색 큐브)을 찾으세요!</p>
+            <h1 class="text-3xl sm:text-4xl font-extrabold mb-3 text-sky-400 tracking-wider">거대 미로 & 파쿠르</h1>
+            <p class="text-sm text-slate-300 mb-5">수많은 갈림길과 막다른 길을 뚫고 빛나는 출구를 찾으세요.</p>
             
-            <div class="bg-gray-800/90 p-4 rounded-lg mb-6 text-sm text-left text-gray-300 space-y-2 border border-slate-700">
-                <p><span class="font-bold text-white">W, A, S, D</span> : 이동</p>
-                <p><span class="font-bold text-emerald-400">Shift (누른 채 이동)</span> : 고속 달리기</p>
-                <p><span class="font-bold text-yellow-400">⚡ 스테미너</span> : 달릴 때 소모되며 방전 시 일시 정지</p>
-                <p><span class="font-bold text-white">마우스</span> : 손전등 시점 회전</p>
-                <p><span class="font-bold text-white">ESC</span> : 일시정지 / 마우스 잠금 해제</p>
+            <div class="bg-slate-900/80 p-4 rounded-lg mb-6 text-sm text-left text-slate-200 space-y-2 border border-slate-700">
+                <p><span class="font-bold text-white">W, A, S, D</span> : 이동 및 점프 중 공중 방향전환</p>
+                <p><span class="font-bold text-yellow-400">Spacebar</span> : 점프 (스테미너 소모 없음)</p>
+                <p><span class="font-bold text-emerald-400">Shift</span> : 달리기 (스테미너 소모)</p>
+                <p><span class="font-bold text-slate-400">미니맵</span> : 시야에 보이는 길만 레이더에 표시됩니다.</p>
             </div>
 
-            <button id="start-btn" class="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-lg shadow-lg transition-transform active:scale-95 text-lg w-full">
-                게임 시작 (마우스 잠금)
+            <button id="start-btn" class="px-8 py-3 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg transition-transform active:scale-95 text-lg w-full">
+                미로 진입 (마우스 클릭)
             </button>
         </div>
 
-        <!-- 게임 클리어 화면 -->
         <div id="win-screen" class="overlay-panel">
             <h1 class="text-5xl mb-3">🏆</h1>
-            <h1 class="text-3xl font-extrabold mb-2 text-green-400">미로 탈출 성공!</h1>
-            <p class="text-sm text-gray-300 mb-4">어둠 속에서 길을 잃지 않고 탈출구를 발견했습니다.</p>
+            <h1 class="text-3xl font-extrabold mb-2 text-sky-400">미로 탈출 성공!</h1>
             
             <div class="bg-slate-900/90 p-4 rounded-lg border border-slate-700 text-left mb-6 text-sm">
-                <p class="text-slate-300">⏱️ 탈출 소요 시간: <span id="final-time" class="font-bold text-yellow-300 text-base">0초</span></p>
-                <p class="text-slate-300 mt-1">⚡ 남은 스테미너: <span id="final-stamina" class="font-bold text-emerald-400 text-base">100%</span></p>
+                <p class="text-slate-300">⏱️ 완주 소요 시간: <span id="final-time" class="font-bold text-yellow-300 text-base">0초</span></p>
+                <p class="text-slate-300 mt-1">💀 추락 횟수: <span id="death-count" class="font-bold text-red-400 text-base">0회</span></p>
             </div>
 
-            <button onclick="location.reload()" class="px-8 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg shadow-lg transition-transform active:scale-95 text-lg w-full">
-                새로운 미로 도전하기
+            <button onclick="location.reload()" class="px-8 py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg shadow-lg transition-transform active:scale-95 text-lg w-full">
+                새로운 미로 생성하기
             </button>
         </div>
     </div>
 
-    <!-- 십자선 (에임) -->
     <div id="crosshair"></div>
 
     <script type="module">
@@ -209,311 +221,296 @@
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         let camera, scene, renderer, controls;
-        let flashlight, playerLight;
-        let goalMesh, goalLight, portalGroup;
+        let flashlight, ambientLight;
+        let goalMesh, portalGroup;
         let gameWon = false;
         let startTime = null;
+        let falls = 0;
 
-        // 키보드 이동 및 달리기 상태
-        let moveForward = false;
-        let moveBackward = false;
-        let moveLeft = false;
-        let moveRight = false;
+        let moveForward = false, moveBackward = false;
+        let moveLeft = false, moveRight = false;
         let isSprinting = false;
 
-        // 속도 및 물리 파라미터
-        const WALK_SPEED = 24.0;
-        const SPRINT_SPEED = 50.0;
+        // 물리 상수
+        const WALK_SPEED = 22.0;
+        const SPRINT_SPEED = 42.0;
+        const GRAVITY = 90.0; 
+        const JUMP_FORCE = 32.0; 
+        
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
         let prevTime = performance.now();
-
-        // 헤드 바빙(발걸음 흔들림) 변수
+        
+        let physicalY = 0; 
+        let canJump = false; 
         let bobTimer = 0;
 
-        // 스테미너 시스템 변수
         const MAX_STAMINA = 100;
         let stamina = MAX_STAMINA;
-        const STAMINA_DRAIN_RATE = 28;  // 초당 소모량
-        const STAMINA_RECOVERY_RATE = 22; // 초당 회복량
+        const STAMINA_DRAIN_RATE = 20;
+        const STAMINA_RECOVERY_RATE = 30;
         let isExhausted = false;
-        const RECOVERY_THRESHOLD = 30; // 탈진 후 회복되어야 다시 달릴 수 있는 최소 수치
 
-        // 맵 충돌 박스 배열
-        const wallBoxes = [];
-        let playerBox;
-        let goalBox;
+        // 미로 크기 (홀수 필수)
+        const GRID_ROWS = 31; 
+        const GRID_COLS = 31;
+        const CELL_SIZE = 6.0;         
+        const PLATFORM_SIZE = 2.4; // 좁은 점프 발판 
+        const WALL_HEIGHT = 14.0;      
+        const FLOOR_HEIGHT = 1.0;
+        const PLAYER_HEIGHT = 1.6;     
+        const PLAYER_SIZE = 0.6;       
 
-        // 미로 설정 상수
-        const CELL_SIZE = 4;
-        const WALL_HEIGHT = 3.5;
-        const PLAYER_HEIGHT = 1.6;
-        const PLAYER_SIZE = 0.55;
-
-        // 17x17 미로 크기
-        const GRID_ROWS = 17;
-        const GRID_COLS = 17;
         let mazeGrid = [];
-        let startPos = { x: 1, z: 1 };
-        let goalPos = { x: 15, z: 15 };
+        const solidBoxes = []; 
+        let goalBox;
+        let startPosWorld = new THREE.Vector3();
 
-        // HUD DOM 캐싱
         const staminaFill = document.getElementById('stamina-fill');
         const staminaPercent = document.getElementById('stamina-percent');
-        const exhaustionText = document.getElementById('exhaustion-text');
-        const exhaustionVignette = document.getElementById('exhaustion-vignette');
         const timerDisplay = document.getElementById('timer-display');
         const sprintStatusTag = document.getElementById('sprint-status-tag');
         const minimapCanvas = document.getElementById('minimap-canvas');
         const minimapCtx = minimapCanvas.getContext('2d');
+        const fallOverlay = document.getElementById('fall-overlay');
+
+        // BFS 최단 경로 알고리즘
+        function findShortestPathBFS(grid, startR, startC, goalR, goalC) {
+            let queue = [{r: startR, c: startC, path: []}];
+            let visited = Array.from({length: grid.length}, () => Array(grid[0].length).fill(false));
+            visited[startR][startC] = true;
+
+            while(queue.length > 0) {
+                let curr = queue.shift();
+                let currPath = [...curr.path, {r: curr.r, c: curr.c}];
+
+                if(curr.r === goalR && curr.c === goalC) return currPath;
+
+                const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+                for(let [dr, dc] of dirs) {
+                    let nr = curr.r + dr, nc = curr.c + dc;
+                    if(nr > 0 && nr < grid.length - 1 && nc > 0 && nc < grid[0].length - 1) {
+                        if(grid[nr][nc] !== 1 && !visited[nr][nc]) {
+                            visited[nr][nc] = true;
+                            queue.push({r: nr, c: nc, path: currPath});
+                        }
+                    }
+                }
+            }
+            return [];
+        }
 
         function generateProceduralMaze(rows, cols) {
+            // 1. 모든 칸을 벽(1)으로 채움
             const grid = Array.from({ length: rows }, () => Array(cols).fill(1));
-
-            function carve(r, c) {
-                grid[r][c] = 0;
-                const dirs = [
-                    [-2, 0], [2, 0], [0, -2], [0, 2]
-                ].sort(() => Math.random() - 0.5);
-
-                for (const [dr, dc] of dirs) {
-                    const nr = r + dr;
-                    const nc = c + dc;
+            
+            // 2. DFS (Recursive Backtracking) 미로 파기 - 완벽한 미로 생성
+            function carveDFS(r, c) {
+                grid[r][c] = 0; 
+                // 상하좌우를 랜덤한 순서로 섞음 (2칸씩 건너뜀)
+                const dirs = [ [-2, 0], [2, 0], [0, -2], [0, 2] ].sort(() => Math.random() - 0.5);
+                for (let [dr, dc] of dirs) {
+                    let nr = r + dr, nc = c + dc;
                     if (nr > 0 && nr < rows - 1 && nc > 0 && nc < cols - 1 && grid[nr][nc] === 1) {
-                        grid[r + dr / 2][c + dc / 2] = 0;
-                        carve(nr, nc);
+                        grid[r + dr / 2][c + dc / 2] = 0; // 중간 벽 허물기
+                        carveDFS(nr, nc); // 재귀 탐색
+                    }
+                }
+            }
+            
+            // (1,1)부터 파기 시작
+            carveDFS(1, 1);
+            
+            // 3. BFS로 최단 경로 찾기
+            const path = findShortestPathBFS(grid, 1, 1, rows - 2, cols - 2);
+            
+            // 4. 출구 직전 12칸을 함정 구역(4)으로 지정
+            const trapCount = 12;
+            const startIndex = Math.max(1, path.length - 1 - trapCount);
+            
+            for(let i = startIndex; i < path.length - 1; i++) {
+                grid[path[i].r][path[i].c] = 4; // 4: 바닥 없는 작은 발판(함정)
+            }
+            
+            grid[1][1] = 2; // 시작점 안전지대
+            grid[rows - 2][cols - 2] = 3; // 출구
+
+            return grid;
+        }
+
+        function createBrickTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            // 시멘트 줄눈 (Mortar)
+            ctx.fillStyle = '#8e969d';
+            ctx.fillRect(0, 0, 512, 512);
+
+            const bw = 128; 
+            const bh = 64; 
+            const gap = 6; 
+
+            for (let y = 0; y < 512; y += bh) {
+                let offset = (y / bh) % 2 === 0 ? 0 : bw / 2;
+                for (let x = -bw; x < 512; x += bw) {
+                    // 자연스러운 붉은색/갈색 벽돌 색상 변형
+                    const r = 110 + Math.random() * 60;
+                    const g = 50 + Math.random() * 30;
+                    const b = 40 + Math.random() * 20;
+                    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+                    
+                    ctx.fillRect(x + offset + gap/2, y + gap/2, bw - gap, bh - gap);
+                    
+                    // 벽돌 질감 (오래되고 거친 느낌)
+                    for (let n = 0; n < 80; n++) {
+                        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.15)';
+                        const nx = x + offset + gap/2 + Math.random() * (bw - gap);
+                        const ny = y + gap/2 + Math.random() * (bh - gap);
+                        ctx.fillRect(nx, ny, 2 + Math.random()*2, 2 + Math.random()*2);
                     }
                 }
             }
 
-            carve(1, 1);
-            grid[1][1] = 2; // 시작점
-            grid[rows - 2][cols - 2] = 3; // 출구 목표점
-            return grid;
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(4, 2); // 벽에 맞게 반복
+            return texture;
         }
 
-        init();
-        animate();
+        function buildEnvironment() {
+            const brickTexture = createBrickTexture();
+            const wallMat = new THREE.MeshStandardMaterial({ map: brickTexture, roughness: 0.9, metalness: 0.1 });
+            const safeFloorMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 });
+            const trapPlatMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.6 }); // 눈에 띄는 노란색 발판
+
+            const wallGeo = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
+            const safeFloorGeo = new THREE.BoxGeometry(CELL_SIZE, FLOOR_HEIGHT, CELL_SIZE); 
+            const trapPlatGeo = new THREE.BoxGeometry(PLATFORM_SIZE, FLOOR_HEIGHT, PLATFORM_SIZE); 
+
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    const cell = mazeGrid[r][c];
+                    const x = (c - GRID_COLS / 2) * CELL_SIZE;
+                    const z = (r - GRID_ROWS / 2) * CELL_SIZE;
+
+                    if (cell === 1) { // 1: 벽
+                        const wall = new THREE.Mesh(wallGeo, wallMat);
+                        wall.position.set(x, WALL_HEIGHT / 2, z); 
+                        scene.add(wall);
+                        solidBoxes.push(new THREE.Box3().setFromObject(wall));
+                    } 
+                    else if (cell === 0 || cell === 2 || cell === 3) { // 0,2,3: 꽉 찬 안전한 바닥
+                        const floor = new THREE.Mesh(safeFloorGeo, safeFloorMat);
+                        floor.position.set(x, FLOOR_HEIGHT / 2, z);
+                        scene.add(floor);
+                        solidBoxes.push(new THREE.Box3().setFromObject(floor));
+                        
+                        if (cell === 2) { // 시작 위치 세팅
+                            startPosWorld.set(x, FLOOR_HEIGHT + PLAYER_HEIGHT, z);
+                            controls.getObject().position.copy(startPosWorld);
+                            physicalY = startPosWorld.y;
+                        } 
+                        else if (cell === 3) { // 출구 큐브
+                            portalGroup = new THREE.Group();
+                            portalGroup.position.set(x, FLOOR_HEIGHT + 1.2, z);
+
+                            const goalGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+                            const goalMaterial = new THREE.MeshStandardMaterial({
+                                color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 1.5
+                            });
+                            goalMesh = new THREE.Mesh(goalGeo, goalMaterial);
+                            portalGroup.add(goalMesh);
+
+                            const goalLight = new THREE.PointLight(0x38bdf8, 2.5, 12);
+                            portalGroup.add(goalLight);
+                            scene.add(portalGroup);
+                            
+                            goalBox = new THREE.Box3().setFromCenterAndSize(
+                                new THREE.Vector3(x, FLOOR_HEIGHT + 1.2, z),
+                                new THREE.Vector3(2.5, 3, 2.5)
+                            );
+                        }
+                    } 
+                    else if (cell === 4) { // 4: 공중에 떠있는 함정 발판
+                        // -0.5 ~ 1.0 무작위 높이 변동
+                        const randomY = (Math.random() * 1.5) - 0.5; 
+                        const plat = new THREE.Mesh(trapPlatGeo, trapPlatMat);
+                        plat.position.set(x, randomY + FLOOR_HEIGHT/2, z);
+                        scene.add(plat);
+                        solidBoxes.push(new THREE.Box3().setFromObject(plat));
+                    }
+                }
+            }
+        }
 
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x05070f);
-            scene.fog = new THREE.FogExp2(0x05070f, 0.075); // 깊고 으스스한 안개
+            scene.background = new THREE.Color(0x020617);
+            scene.fog = new THREE.FogExp2(0x020617, 0.045); 
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
-            // 약한 앰비언트 라이트 (기본 명암 유지)
-            const ambientLight = new THREE.AmbientLight(0x1a243b, 0.35);
+            ambientLight = new THREE.AmbientLight(0x334155, 0.85); 
             scene.add(ambientLight);
 
-            // 1인칭 컨트롤러
             controls = new PointerLockControls(camera, document.body);
             const startBtn = document.getElementById('start-btn');
             const startScreen = document.getElementById('start-screen');
 
-            startBtn.addEventListener('click', () => {
-                controls.lock();
-            });
-
+            startBtn.addEventListener('click', () => controls.lock());
             controls.addEventListener('lock', () => {
                 startScreen.style.display = 'none';
                 if (!startTime) startTime = Date.now();
             });
-
             controls.addEventListener('unlock', () => {
-                if (!gameWon) startScreen.style.display = 'block';
+                if (!gameWon) startScreen.style.display = 'flex';
             });
-
             scene.add(controls.getObject());
 
-            // 플레이어 손전등 (SpotLight)
-            flashlight = new THREE.SpotLight(0xfff5e6, 3.2, 28, Math.PI / 6.5, 0.4, 1.2);
-            flashlight.position.set(0, 0, 0);
+            // 1인칭 손전등 장착
+            flashlight = new THREE.SpotLight(0xfff5e6, 2.5, 45, Math.PI / 4.5, 0.5, 1.2);
             camera.add(flashlight);
             flashlight.target = new THREE.Object3D();
             camera.add(flashlight.target);
             flashlight.target.position.set(0, 0, -5);
 
-            // 플레이어 주변 은은한 포인트 라이트
-            playerLight = new THREE.PointLight(0x60a5fa, 1.0, 6);
-            controls.getObject().add(playerLight);
-
-            // 키보드 조작 이벤트 리스너
-            const onKeyDown = function (event) {
-                switch (event.code) {
-                    case 'KeyW':
-                    case 'ArrowUp': moveForward = true; break;
-                    case 'KeyA':
-                    case 'ArrowLeft': moveLeft = true; break;
-                    case 'KeyS':
-                    case 'ArrowDown': moveBackward = true; break;
-                    case 'KeyD':
-                    case 'ArrowRight': moveRight = true; break;
-                    case 'ShiftLeft':
-                    case 'ShiftRight': isSprinting = true; break;
+            document.addEventListener('keydown', (e) => {
+                switch (e.code) {
+                    case 'KeyW': case 'ArrowUp': moveForward = true; break;
+                    case 'KeyA': case 'ArrowLeft': moveLeft = true; break;
+                    case 'KeyS': case 'ArrowDown': moveBackward = true; break;
+                    case 'KeyD': case 'ArrowRight': moveRight = true; break;
+                    case 'ShiftLeft': case 'ShiftRight': isSprinting = true; break;
+                    case 'Space': 
+                        if (canJump) { // 점프 시 스테미너 소모 없음
+                            velocity.y = JUMP_FORCE;
+                            canJump = false; 
+                        }
+                        break;
                 }
-            };
+            });
 
-            const onKeyUp = function (event) {
-                switch (event.code) {
-                    case 'KeyW':
-                    case 'ArrowUp': moveForward = false; break;
-                    case 'KeyA':
-                    case 'ArrowLeft': moveLeft = false; break;
-                    case 'KeyS':
-                    case 'ArrowDown': moveBackward = false; break;
-                    case 'KeyD':
-                    case 'ArrowRight': moveRight = false; break;
-                    case 'ShiftLeft':
-                    case 'ShiftRight': isSprinting = false; break;
+            document.addEventListener('keyup', (e) => {
+                switch (e.code) {
+                    case 'KeyW': case 'ArrowUp': moveForward = false; break;
+                    case 'KeyA': case 'ArrowLeft': moveLeft = false; break;
+                    case 'KeyS': case 'ArrowDown': moveBackward = false; break;
+                    case 'KeyD': case 'ArrowRight': moveRight = false; break;
+                    case 'ShiftLeft': case 'ShiftRight': isSprinting = false; break;
                 }
-            };
+            });
 
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
-
-            // 절차적 미로 생성 및 3D 맵 빌드
             mazeGrid = generateProceduralMaze(GRID_ROWS, GRID_COLS);
-            buildMaze();
+            buildEnvironment();
 
-            // 천장 및 바닥 생성
-            createSurfaces();
-
-            // 렌더러 생성
-            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.1;
             document.body.appendChild(renderer.domElement);
 
             window.addEventListener('resize', onWindowResize);
-            playerBox = new THREE.Box3();
-        }
-
-        function createWallTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 256; canvas.height = 256;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1e293b';
-            ctx.fillRect(0, 0, 256, 256);
-
-            ctx.strokeStyle = '#0f172a';
-            ctx.lineWidth = 4;
-            // 벽돌 패턴
-            const bh = 32; const bw = 64;
-            for (let y = 0; y < 256; y += bh) {
-                const offset = (y / bh) % 2 === 0 ? 0 : bw / 2;
-                for (let x = -bw; x < 256 + bw; x += bw) {
-                    ctx.strokeRect(x + offset, y, bw, bh);
-                    // 약간의 노이즈
-                    ctx.fillStyle = (Math.random() > 0.5) ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)';
-                    ctx.fillRect(x + offset + 2, y + 2, bw - 4, bh - 4);
-                }
-            }
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
-            return texture;
-        }
-
-        function createFloorTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 128; canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#0f172a';
-            ctx.fillRect(0, 0, 128, 128);
-            ctx.strokeStyle = '#1e293b';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(0, 0, 128, 128);
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
-            texture.repeat.set(20, 20);
-            return texture;
-        }
-
-        function createSurfaces() {
-            const floorGeo = new THREE.PlaneGeometry(120, 120);
-            const floorMat = new THREE.MeshStandardMaterial({
-                map: createFloorTexture(),
-                roughness: 0.8,
-                metalness: 0.1
-            });
-            const floor = new THREE.Mesh(floorGeo, floorMat);
-            floor.rotation.x = -Math.PI / 2;
-            floor.position.y = 0;
-            scene.add(floor);
-
-            // 천장 메쉬
-            const ceilingMat = new THREE.MeshStandardMaterial({
-                color: 0x090d16,
-                roughness: 0.9
-            });
-            const ceiling = new THREE.Mesh(floorGeo, ceilingMat);
-            ceiling.rotation.x = Math.PI / 2;
-            ceiling.position.y = WALL_HEIGHT;
-            scene.add(ceiling);
-        }
-
-        function buildMaze() {
-            const wallTexture = createWallTexture();
-            const wallGeometry = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
-            const wallMaterial = new THREE.MeshStandardMaterial({
-                map: wallTexture,
-                roughness: 0.7,
-                metalness: 0.1
-            });
-
-            for (let r = 0; r < GRID_ROWS; r++) {
-                for (let c = 0; c < GRID_COLS; c++) {
-                    const cell = mazeGrid[r][c];
-                    const x = (c - GRID_COLS / 2) * CELL_SIZE + CELL_SIZE / 2;
-                    const z = (r - GRID_ROWS / 2) * CELL_SIZE + CELL_SIZE / 2;
-
-                    if (cell === 1) {
-                        const wall = new THREE.Mesh(wallGeometry, wallMaterial);
-                        wall.position.set(x, WALL_HEIGHT / 2, z);
-                        scene.add(wall);
-                        wallBoxes.push(new THREE.Box3().setFromObject(wall));
-                    } else if (cell === 2) {
-                        // 시작 위치
-                        controls.getObject().position.set(x, PLAYER_HEIGHT, z);
-                    } else if (cell === 3) {
-                        // 탈출구 포털 그룹
-                        portalGroup = new THREE.Group();
-                        portalGroup.position.set(x, 1.2, z);
-
-                        const goalGeo = new THREE.OctahedronGeometry(0.8, 0);
-                        const goalMat = new THREE.MeshStandardMaterial({
-                            color: 0x10b981,
-                            emissive: 0x10b981,
-                            emissiveIntensity: 1.2,
-                            wireframe: false,
-                            roughness: 0.2
-                        });
-                        goalMesh = new THREE.Mesh(goalGeo, goalMat);
-                        portalGroup.add(goalMesh);
-
-                        // 회전하는 외곽 링
-                        const ringGeo = new THREE.TorusGeometry(1.2, 0.08, 8, 32);
-                        const ringMat = new THREE.MeshBasicMaterial({ color: 0x34d399, wireframe: true });
-                        const ring = new THREE.Mesh(ringGeo, ringMat);
-                        ring.name = "portalRing";
-                        portalGroup.add(ring);
-
-                        // 포털 빛
-                        goalLight = new THREE.PointLight(0x10b981, 3.0, 12);
-                        portalGroup.add(goalLight);
-
-                        scene.add(portalGroup);
-                        goalBox = new THREE.Box3().setFromCenterAndSize(
-                            new THREE.Vector3(x, 1.2, z),
-                            new THREE.Vector3(1.8, 2.5, 1.8)
-                        );
-                    }
-                }
-            }
         }
 
         function onWindowResize() {
@@ -522,75 +519,115 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        function checkCollision() {
-            const playerPos = controls.getObject().position;
-            const minPoint = new THREE.Vector3(
-                playerPos.x - PLAYER_SIZE / 2,
-                0,
-                playerPos.z - PLAYER_SIZE / 2
+        function getPlayerAABB(px, py, pz) {
+            const footY = py - PLAYER_HEIGHT;
+            return new THREE.Box3(
+                new THREE.Vector3(px - PLAYER_SIZE / 2, footY, pz - PLAYER_SIZE / 2),
+                new THREE.Vector3(px + PLAYER_SIZE / 2, py + 0.1, pz + PLAYER_SIZE / 2)
             );
-            const maxPoint = new THREE.Vector3(
-                playerPos.x + PLAYER_SIZE / 2,
-                PLAYER_HEIGHT,
-                playerPos.z + PLAYER_SIZE / 2
-            );
-            playerBox.set(minPoint, maxPoint);
-
-            for (let i = 0; i < wallBoxes.length; i++) {
-                if (playerBox.intersectsBox(wallBoxes[i])) {
-                    return true;
-                }
-            }
-            return false;
         }
 
-        function drawMinimap() {
-            minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
-            const scale = minimapCanvas.width / (GRID_COLS * CELL_SIZE);
-            const halfW = (GRID_COLS * CELL_SIZE) / 2;
-            const halfH = (GRID_ROWS * CELL_SIZE) / 2;
+        function handleFall() {
+            fallOverlay.style.opacity = '1';
+            setTimeout(() => { fallOverlay.style.opacity = '0'; }, 300);
 
-            // 벽 그리기
-            minimapCtx.fillStyle = '#334155';
+            controls.getObject().position.copy(startPosWorld);
+            physicalY = startPosWorld.y;
+            velocity.set(0, 0, 0);
+            
+            stamina = MAX_STAMINA;
+            isExhausted = false;
+            falls++;
+        }
+
+        // 브레슨햄 선 긋기 알고리즘 (시야 차단 로직)
+        function hasLineOfSight(r0, c0, r1, c1, grid) {
+            let dx = Math.abs(c1 - c0);
+            let dy = Math.abs(r1 - r0);
+            let sx = (c0 < c1) ? 1 : -1;
+            let sy = (r0 < r1) ? 1 : -1;
+            let err = dx - dy;
+            let currR = r0;
+            let currC = c0;
+            
+            while (true) {
+                if (currR === r1 && currC === c1) return true; // 도착 성공 (시야 확보)
+                
+                // 중간에 벽을 만나면 차단
+                if (grid[currR][currC] === 1 && (currR !== r0 || currC !== c0)) return false; 
+                
+                let e2 = 2 * err;
+                if (e2 > -dy) { err -= dy; currC += sx; }
+                if (e2 < dx) { err += dx; currR += sy; }
+            }
+        }
+
+        function updateMinimap() {
+            const size = minimapCanvas.width;
+            const cx = size / 2;
+            const cy = size / 2;
+            const scale = 3.2; // 줌인 배율
+            const p = controls.getObject().position;
+
+            // 3D 월드 좌표 -> 그리드 좌표 변환
+            const playerGridC = Math.round(p.x / CELL_SIZE) + Math.floor(GRID_COLS / 2);
+            const playerGridR = Math.round(p.z / CELL_SIZE) + Math.floor(GRID_ROWS / 2);
+
+            minimapCtx.clearRect(0, 0, size, size);
+            minimapCtx.save();
+            
+            // 미니맵 중심을 플레이어에 맞추고 시야 방향으로 회전
+            minimapCtx.translate(cx, cy);
+            const camDir = new THREE.Vector3();
+            camera.getWorldDirection(camDir);
+            const angle = Math.atan2(camDir.x, -camDir.z);
+            minimapCtx.rotate(angle); 
+            minimapCtx.translate(-p.x * scale, -p.z * scale);
+
+            const renderDistGrid = 8; // 표시 반경 8칸
+
             for (let r = 0; r < GRID_ROWS; r++) {
                 for (let c = 0; c < GRID_COLS; c++) {
-                    if (mazeGrid[r][c] === 1) {
-                        const px = ((c - GRID_COLS / 2) * CELL_SIZE + halfW) * scale;
-                        const pz = ((r - GRID_ROWS / 2) * CELL_SIZE + halfH) * scale;
-                        minimapCtx.fillRect(px, pz, CELL_SIZE * scale, CELL_SIZE * scale);
+                    // 거리 체크 
+                    if (Math.abs(r - playerGridR) > renderDistGrid || Math.abs(c - playerGridC) > renderDistGrid) continue;
+
+                    // 시야 차단 (Line of Sight) 체크
+                    if (!hasLineOfSight(playerGridR, playerGridC, r, c, mazeGrid)) continue;
+
+                    const x = (c - GRID_COLS / 2) * CELL_SIZE;
+                    const z = (r - GRID_ROWS / 2) * CELL_SIZE;
+
+                    if (mazeGrid[r][c] === 1) { // 벽
+                        minimapCtx.fillStyle = '#64748b'; 
+                        minimapCtx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale);
+                    } else if (mazeGrid[r][c] === 4) { // 함정 (작은 노란색)
+                        minimapCtx.fillStyle = '#f59e0b'; 
+                        minimapCtx.fillRect((x - PLATFORM_SIZE/2) * scale, (z - PLATFORM_SIZE/2) * scale, PLATFORM_SIZE * scale, PLATFORM_SIZE * scale);
+                    } else { // 안전 바닥 (초록)
+                        minimapCtx.fillStyle = '#10b981'; 
+                        minimapCtx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale);
                     }
                 }
             }
 
-            // 출구 (초록 점)
             if (portalGroup) {
-                const ex = (portalGroup.position.x + halfW) * scale;
-                const ez = (portalGroup.position.z + halfH) * scale;
+                minimapCtx.fillStyle = '#38bdf8';
                 minimapCtx.beginPath();
-                minimapCtx.arc(ex, ez, 4, 0, Math.PI * 2);
-                minimapCtx.fillStyle = '#10b981';
+                minimapCtx.arc(portalGroup.position.x * scale, portalGroup.position.z * scale, 2.5 * scale, 0, Math.PI * 2);
                 minimapCtx.fill();
             }
 
-            // 플레이어 위치 및 시야 방향 화살표
-            const p = controls.getObject().position;
-            const plX = (p.x + halfW) * scale;
-            const plZ = (p.z + halfH) * scale;
+            minimapCtx.restore();
 
+            // 중앙 고정 십자 포인터
             minimapCtx.save();
-            minimapCtx.translate(plX, plZ);
-            const camDir = new THREE.Vector3();
-            camera.getWorldDirection(camDir);
-            const angle = Math.atan2(camDir.x, -camDir.z);
-            minimapCtx.rotate(angle);
-
-            // 플레이어 점 및 시야각 부채꼴
+            minimapCtx.translate(cx, cy);
+            minimapCtx.fillStyle = '#ffffff';
             minimapCtx.beginPath();
-            minimapCtx.moveTo(0, 0);
-            minimapCtx.lineTo(-6, 8);
-            minimapCtx.lineTo(6, 8);
+            minimapCtx.moveTo(0, -6);
+            minimapCtx.lineTo(-5, 5);
+            minimapCtx.lineTo(5, 5);
             minimapCtx.closePath();
-            minimapCtx.fillStyle = '#38bdf8';
             minimapCtx.fill();
             minimapCtx.restore();
         }
@@ -600,10 +637,10 @@
             if (gameWon) return;
 
             const time = performance.now();
-            const delta = Math.min((time - prevTime) / 1000, 0.1);
+            const delta = Math.min((time - prevTime) / 1000, 0.1); // 프레임 저하 보정 한도 0.1s
 
             if (controls.isLocked) {
-                // 경과 시간 갱신
+                // UI 타이머 업데이트
                 if (startTime) {
                     const elapsed = Math.floor((Date.now() - startTime) / 1000);
                     const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
@@ -611,132 +648,147 @@
                     timerDisplay.innerText = `${mins}:${secs}`;
                 }
 
-                // 이동 입력 벡터 설정
                 direction.z = Number(moveForward) - Number(moveBackward);
                 direction.x = Number(moveRight) - Number(moveLeft);
-                direction.normalize();
-
+                direction.normalize(); // 대각선 이동 속도 보정
                 const isMoving = (moveForward || moveBackward || moveLeft || moveRight);
 
-                // --- 스테미너 및 달리기 판정 ---
+                // 스테미너: 오직 달리기 시에만 깎임
                 const wantsToSprint = isSprinting && isMoving;
-
                 if (wantsToSprint && !isExhausted && stamina > 0) {
-                    // 전력 질주 상태
                     stamina -= STAMINA_DRAIN_RATE * delta;
-                    if (stamina <= 0) {
-                        stamina = 0;
-                        isExhausted = true; // 탈진 발동
-                    }
+                    if (stamina <= 0) { stamina = 0; isExhausted = true; }
                 } else {
-                    // 걷거나 가만히 서 있을 때 회복
                     stamina += STAMINA_RECOVERY_RATE * delta;
                     if (stamina >= MAX_STAMINA) stamina = MAX_STAMINA;
-
-                    // 탈진 해제 조건
-                    if (isExhausted && stamina >= RECOVERY_THRESHOLD) {
-                        isExhausted = false;
-                    }
+                    if (isExhausted && stamina >= 30) isExhausted = false; 
                 }
 
                 const currentlySprinting = wantsToSprint && !isExhausted && stamina > 0;
                 const currentMoveSpeed = currentlySprinting ? SPRINT_SPEED : WALK_SPEED;
 
-                // 스테미너 UI 갱신
-                const stPercentVal = Math.round((stamina / MAX_STAMINA) * 100);
-                staminaPercent.innerText = `${stPercentVal}%`;
-                staminaFill.style.width = `${stPercentVal}%`;
-
+                // UI 반영
+                staminaPercent.innerText = `${Math.round(stamina)}%`;
+                staminaFill.style.width = `${Math.round(stamina)}%`;
+                
                 if (isExhausted) {
                     staminaFill.classList.add('exhausted');
-                    exhaustionText.classList.remove('hidden');
-                    exhaustionVignette.style.opacity = '1';
-                    sprintStatusTag.innerText = "(탈진 중!)";
-                    sprintStatusTag.className = "text-[10px] text-red-400 font-bold";
+                    sprintStatusTag.innerText = "⚠️ 탈진 상태!";
+                    sprintStatusTag.className = "text-[10px] text-red-400 font-bold mt-1 text-center";
                 } else {
                     staminaFill.classList.remove('exhausted');
-                    exhaustionText.classList.add('hidden');
-                    exhaustionVignette.style.opacity = '0';
-                    sprintStatusTag.innerText = currentlySprinting ? "(달리는 중 ⚡)" : "(Shift 달리기)";
-                    sprintStatusTag.className = currentlySprinting ? "text-[10px] text-emerald-300 font-bold" : "text-[10px] text-gray-400 font-normal";
+                    sprintStatusTag.innerText = currentlySprinting ? "⚡ 달리는 중" : "(Shift로 달리기)";
+                    sprintStatusTag.className = currentlySprinting ? "text-[10px] text-emerald-400 font-bold mt-1 text-center" : "text-[10px] text-gray-400 font-normal mt-1 text-center";
                 }
 
-                // 감속 마찰력 적용
+                // 감속 마찰 적용
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-
+                
                 if (isMoving) {
                     velocity.z -= direction.z * currentMoveSpeed * delta;
                     velocity.x -= direction.x * currentMoveSpeed * delta;
-
-                    // 헤드 바빙 (걸음걸이 시점 흔들림)
-                    const bobFreq = currentlySprinting ? 14 : 9;
-                    const bobAmp = currentlySprinting ? 0.08 : 0.04;
-                    bobTimer += delta * bobFreq;
-                    camera.position.y = PLAYER_HEIGHT + Math.sin(bobTimer) * bobAmp;
-                } else {
-                    camera.position.y = PLAYER_HEIGHT;
                 }
 
-                // 카메라의 현재 방향을 기준으로 월드 이동 벡터 계산 (벽 미끄러짐 효과 구현)
+                // 1. 수직 Y축 중력 및 충돌 검사
+                velocity.y -= GRAVITY * delta;
+                const nextY = physicalY + velocity.y * delta;
+                
+                let px = controls.getObject().position.x;
+                let pz = controls.getObject().position.z;
+                let collidedY = false;
+
+                const boxY = getPlayerAABB(px, nextY, pz);
+                for (let box of solidBoxes) {
+                    if (boxY.intersectsBox(box)) {
+                        if (velocity.y < 0) { // 떨어지는 중 바닥 착지
+                            physicalY = box.max.y + PLAYER_HEIGHT;
+                            velocity.y = 0;
+                            canJump = true;
+                            collidedY = true;
+                        } else if (velocity.y > 0) { // 점프 중 천장에 박음
+                            physicalY = box.min.y + PLAYER_HEIGHT - 0.1;
+                            velocity.y = 0;
+                            collidedY = true;
+                        }
+                        break;
+                    }
+                }
+                if (!collidedY) { physicalY = nextY; canJump = false; }
+
+                // 머리 흔들림 (Head-Bobbing)
+                let bobOffset = 0;
+                if (isMoving && canJump) {
+                    bobTimer += delta * (currentlySprinting ? 14 : 9);
+                    bobOffset = Math.sin(bobTimer) * (currentlySprinting ? 0.08 : 0.04);
+                }
+                controls.getObject().position.y = physicalY + bobOffset;
+
+                // 2. 수평 X/Z축 이동 및 벽 미끄러짐(Sliding) 처리
                 const camDir = new THREE.Vector3();
                 camera.getWorldDirection(camDir);
-                camDir.y = 0;
-                camDir.normalize();
+                camDir.y = 0; camDir.normalize();
 
                 const camRight = new THREE.Vector3();
                 camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
 
-                const worldDelta = new THREE.Vector3();
-                worldDelta.addScaledVector(camRight, -velocity.x * delta);
-                worldDelta.addScaledVector(camDir, -velocity.z * delta);
+                const deltaX = (-camRight.x * velocity.x - camDir.x * velocity.z) * delta;
+                const deltaZ = (-camRight.z * velocity.x - camDir.z * velocity.z) * delta;
 
-                // X축 이동 및 충돌 (독립적 처리)
-                const prevX = controls.getObject().position.x;
-                controls.getObject().position.x += worldDelta.x;
-                if (checkCollision()) {
-                    controls.getObject().position.x = prevX;
+                // X 충돌 검사
+                controls.getObject().position.x += deltaX;
+                px = controls.getObject().position.x;
+                const pBoxX = getPlayerAABB(px, physicalY + 0.1, pz); // 문지방에 안 걸리도록 Y살짝 올림
+                for (let box of solidBoxes) {
+                    if (pBoxX.intersectsBox(box)) {
+                        controls.getObject().position.x -= deltaX; // 충돌 시 롤백
+                        px = controls.getObject().position.x;
+                        break;
+                    }
                 }
 
-                // Z축 이동 및 충돌 (독립적 처리)
-                const prevZ = controls.getObject().position.z;
-                controls.getObject().position.z += worldDelta.z;
-                if (checkCollision()) {
-                    controls.getObject().position.z = prevZ;
+                // Z 충돌 검사
+                controls.getObject().position.z += deltaZ;
+                pz = controls.getObject().position.z;
+                const pBoxZ = getPlayerAABB(px, physicalY + 0.1, pz);
+                for (let box of solidBoxes) {
+                    if (pBoxZ.intersectsBox(box)) {
+                        controls.getObject().position.z -= deltaZ; // 충돌 시 롤백
+                        pz = controls.getObject().position.z;
+                        break;
+                    }
                 }
 
-                // 출구 도착 (승리 조건)
-                if (goalBox && playerBox.intersectsBox(goalBox)) {
+                // 추락 판정
+                if (physicalY < -10) handleFall();
+
+                // 출구 판정
+                if (goalBox && getPlayerAABB(px, physicalY, pz).intersectsBox(goalBox)) {
                     gameWon = true;
                     controls.unlock();
                     document.getElementById('start-screen').style.display = 'none';
-                    document.getElementById('win-screen').style.display = 'block';
-
+                    document.getElementById('win-screen').style.display = 'flex';
+                    
                     const elapsed = Math.floor((Date.now() - startTime) / 1000);
                     document.getElementById('final-time').innerText = `${elapsed}초`;
-                    document.getElementById('final-stamina').innerText = `${stPercentVal}%`;
+                    document.getElementById('death-count').innerText = `${falls}회`;
                 }
 
-                // 미니맵 갱신
-                drawMinimap();
+                updateMinimap();
             }
 
-            // 포털 애니메이션
-            if (portalGroup) {
-                if (goalMesh) {
-                    goalMesh.rotation.x += 0.015;
-                    goalMesh.rotation.y += 0.025;
-                }
-                const ring = portalGroup.getObjectByName("portalRing");
-                if (ring) {
-                    ring.rotation.x += 0.02;
-                    ring.rotation.z += 0.01;
-                }
+            // 출구 큐브 회전 애니메이션
+            if (portalGroup && goalMesh) {
+                goalMesh.rotation.x += 0.02;
+                goalMesh.rotation.y += 0.03;
             }
 
             prevTime = time;
             renderer.render(scene, camera);
         }
+
+        init();
+        animate();
     </script>
 </body>
 </html>
