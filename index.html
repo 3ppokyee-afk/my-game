@@ -253,6 +253,9 @@
         let joystickTouchId = null, lookTouchId = null;
         let joystickBaseX = 0, joystickBaseY = 0;
         const MAX_JOYSTICK_DIST = 40;
+        
+        let monsters = [];
+        const MONSTER_SPEED = 14.0; // 걷기(20)보단 느리지만 꽤 빠른 속도
         // -----------------------------------------------------------
 
         function loadRankings() {
@@ -432,6 +435,60 @@
             }
         }
 
+        function spawnMonsters() {
+            monsters = [];
+            const mat = new THREE.MeshStandardMaterial({ color: 0x8b0000, roughness: 0.9 }); // 핏빛 붉은색
+            const bodyGeo = new THREE.BoxGeometry(0.6, 0.4, 1.4);
+            const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+            const limbGeo = new THREE.BoxGeometry(0.2, 0.8, 0.2);
+
+            let spawned = 0;
+            while(spawned < 6) { // 6마리 스폰
+                let r = Math.floor(Math.random() * GRID_ROWS);
+                let c = Math.floor(Math.random() * GRID_COLS);
+                
+                // 시작지점, 출구, 함정이 아닌 일반 길에만 스폰
+                if (mazeGrid[r][c] === 0 && r > 4 && c > 4 && r < GRID_ROWS - 4 && c < GRID_COLS - 4) {
+                    const group = new THREE.Group();
+                    
+                    const body = new THREE.Mesh(bodyGeo, mat);
+                    body.position.y = 0.6;
+                    group.add(body);
+                    
+                    const head = new THREE.Mesh(headGeo, mat);
+                    head.position.set(0, 0.8, 0.8);
+                    group.add(head);
+                    
+                    // 4개의 다리
+                    const fl = new THREE.Mesh(limbGeo, mat); fl.position.set(0.4, 0.4, 0.6); group.add(fl);
+                    const fr = new THREE.Mesh(limbGeo, mat); fr.position.set(-0.4, 0.4, 0.6); group.add(fr);
+                    const bl = new THREE.Mesh(limbGeo, mat); bl.position.set(0.4, 0.4, -0.6); group.add(bl);
+                    const br = new THREE.Mesh(limbGeo, mat); br.position.set(-0.4, 0.4, -0.6); group.add(br);
+                    
+                    // 붉은 발광
+                    const light = new THREE.PointLight(0xff0000, 2.0, 15);
+                    light.position.y = 1;
+                    group.add(light);
+                    
+                    const x = (c - GRID_COLS / 2) * CELL_SIZE;
+                    const z = (r - GRID_ROWS / 2) * CELL_SIZE;
+                    group.position.set(x, FLOOR_HEIGHT/2, z);
+                    
+                    scene.add(group);
+                    
+                    monsters.push({
+                        mesh: group,
+                        gridR: r, gridC: c,
+                        targetX: x, targetZ: z,
+                        state: 'wander',
+                        limbs: [fl, fr, bl, br],
+                        animTime: Math.random() * 10
+                    });
+                    spawned++;
+                }
+            }
+        }
+
         function init() {
             loadRankings();
             scene = new THREE.Scene(); 
@@ -445,6 +502,7 @@
             scene.add(camera);
 
             mazeGrid = generateProceduralMaze(GRID_ROWS, GRID_COLS); buildEnvironment();
+            spawnMonsters(); // 괴물 소환
 
             renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.setSize(window.innerWidth, window.innerHeight); document.body.appendChild(renderer.domElement);
@@ -487,7 +545,15 @@
 
             if(deviceType === 'pc') {
                 controls = new PointerLockControls(camera, document.body);
-                controls.addEventListener('unlock', () => { if(!gameWon) { isPlaying = false; document.getElementById('device-screen').style.display = 'flex'; }});
+                controls.addEventListener('unlock', () => { 
+                    if(!gameWon) { 
+                        isPlaying = false; 
+                        document.getElementById('device-screen').style.display = 'flex'; 
+                        if (window.ytPlayerReady && window.ytPlayer && typeof window.ytPlayer.pauseVideo === 'function') {
+                            window.ytPlayer.pauseVideo();
+                        }
+                    }
+                });
                 controls.lock();
                 
                 document.addEventListener('keydown', (e) => {
@@ -580,6 +646,15 @@
             }
             
             if (portalGroup) { ctx.fillStyle = '#ff1493'; ctx.beginPath(); ctx.arc(portalGroup.position.x * scale, portalGroup.position.z * scale, 2.5 * scale, 0, Math.PI * 2); ctx.fill(); }
+            
+            // 미니맵에 괴물을 붉은 점으로 표시
+            for (let m of monsters) {
+                ctx.fillStyle = '#ff0000';
+                ctx.beginPath();
+                ctx.arc(m.mesh.position.x * scale, m.mesh.position.z * scale, 3 * scale, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
             ctx.restore(); ctx.save(); ctx.translate(cx, cy); ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(-5, 5); ctx.lineTo(5, 5); ctx.fill(); ctx.restore();
         }
 
@@ -621,6 +696,72 @@
                 const pGridC = Math.round(camera.position.x / CELL_SIZE) + Math.floor(GRID_COLS / 2);
                 const pGridR = Math.round(camera.position.z / CELL_SIZE) + Math.floor(GRID_ROWS / 2);
                 
+                // --- 괴물 (추적자) 로직 ---
+                for (let m of monsters) {
+                    const dx = camera.position.x - m.mesh.position.x;
+                    const dz = camera.position.z - m.mesh.position.z;
+                    const dist = Math.sqrt(dx*dx + dz*dz);
+                    
+                    // 플레이어와 충돌 시 사망 처리
+                    if (dist < 1.8) { 
+                        const msg = document.createElement('div');
+                        msg.innerText = "🩸 끔찍한 괴물에게 잡혔습니다!";
+                        msg.className = "absolute top-1/3 left-1/2 transform -translate-x-1/2 text-red-500 font-extrabold text-2xl md:text-3xl drop-shadow-lg z-50 bg-black/90 px-8 py-4 rounded-xl border border-red-600";
+                        document.body.appendChild(msg);
+                        setTimeout(() => msg.remove(), 2500);
+                        killPlayer(); 
+                        break; 
+                    }
+
+                    // 직선 시야 확인
+                    let canSee = false;
+                    if (dist < 40) canSee = hasLineOfSight(m.gridR, m.gridC, pGridR, pGridC, mazeGrid);
+
+                    if (canSee) {
+                        m.state = 'chase';
+                        m.targetX = camera.position.x;
+                        m.targetZ = camera.position.z;
+                    }
+
+                    let mx = m.targetX - m.mesh.position.x;
+                    let mz = m.targetZ - m.mesh.position.z;
+                    let mLen = Math.sqrt(mx*mx + mz*mz);
+
+                    if (mLen > 0.1) {
+                        let speed = MONSTER_SPEED * delta;
+                        if (mLen < speed) {
+                            m.mesh.position.x = m.targetX;
+                            m.mesh.position.z = m.targetZ;
+                            m.gridR = Math.round(m.mesh.position.z / CELL_SIZE) + Math.floor(GRID_ROWS / 2);
+                            m.gridC = Math.round(m.mesh.position.x / CELL_SIZE) + Math.floor(GRID_COLS / 2);
+                            if (m.state === 'wander') m.targetX = null; // 배회 중이면 새 목표 찾기
+                        } else {
+                            m.mesh.position.x += (mx / mLen) * speed;
+                            m.mesh.position.z += (mz / mLen) * speed;
+                            m.mesh.rotation.y = Math.atan2(mx, mz); // 쫓아가는 방향 바라보기
+                        }
+                        
+                        // 다리 움직임 애니메이션
+                        m.animTime += delta * 18;
+                        m.limbs[0].rotation.x = Math.sin(m.animTime) * 0.6;
+                        m.limbs[3].rotation.x = Math.sin(m.animTime) * 0.6;
+                        m.limbs[1].rotation.x = Math.sin(m.animTime + Math.PI) * 0.6;
+                        m.limbs[2].rotation.x = Math.sin(m.animTime + Math.PI) * 0.6;
+                    } else {
+                        m.state = 'wander';
+                        const dirs = [[-1,0],[1,0],[0,-1],[0,1]].sort(() => Math.random() - 0.5);
+                        for(let [dr, dc] of dirs) {
+                            let nr = m.gridR + dr, nc = m.gridC + dc;
+                            // 함정(4)이나 벽(1)으로는 배회하지 않음
+                            if (mazeGrid[nr] && (mazeGrid[nr][nc] === 0 || mazeGrid[nr][nc] === 5)) {
+                                m.targetX = (nc - GRID_COLS / 2) * CELL_SIZE;
+                                m.targetZ = (nr - GRID_ROWS / 2) * CELL_SIZE;
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 // 체크포인트 도달 확인
                 if (mazeGrid[pGridR] && mazeGrid[pGridR][pGridC] === 5 && !checkpointReached) {
                     checkpointReached = true;
