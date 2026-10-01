@@ -197,7 +197,7 @@
                 playerVars: { 'autoplay': 0, 'controls': 0, 'loop': 1, 'playlist': 'XnURPQOA3qk', 'rel': 0, 'showinfo': 0 },
                 events: {
                     'onReady': function(event) {
-                        event.target.setVolume(40); // 브금 볼륨 (0~100)
+                        event.target.setVolume(100); // 브금 볼륨 100으로 최대화
                         window.ytPlayerReady = true;
                     }
                 }
@@ -210,7 +210,7 @@
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
         
         let camera, scene, renderer, controls;
-        let flashlight, portalGroup, goalMesh;
+        let flashlight, portalGroup, goalMesh, fakePortalGroup, fakeGoalMesh, fakeGoalBox;
         const STAMINA_DRAIN_RATE = 20, STAMINA_RECOVERY_RATE = 30; let isExhausted = false;
 
         const GRID_ROWS = 31, GRID_COLS = 31;
@@ -307,15 +307,23 @@
             carveDFS(1, 1);
             const path = findShortestPathBFS(grid, 1, 1, rows - 2, cols - 2);
             
-            const trapCount = 10;
-            const startIndex = Math.max(1, path.length - 1 - trapCount);
-            const checkpointIndex = Math.max(1, startIndex - 1);
-            
-            for(let i = startIndex; i < path.length - 1; i++) grid[path[i].r][path[i].c] = 4;
+            // 파쿠르(함정) 구역 제거, 체크포인트(5)는 중앙에 유지
+            const checkpointIndex = Math.floor(path.length / 2);
             
             grid[1][1] = 2; grid[rows - 2][cols - 2] = 3;
             if (grid[path[checkpointIndex].r][path[checkpointIndex].c] !== 2 && grid[path[checkpointIndex].r][path[checkpointIndex].c] !== 3) {
                 grid[path[checkpointIndex].r][path[checkpointIndex].c] = 5; 
+            }
+
+            // 가짜 탈출구(6) 생성 - 진짜 경로가 아닌 무작위 막다른 길에 배치
+            let fakePlaced = false;
+            for (let r = rows - 3; r > 2 && !fakePlaced; r--) {
+                for (let c = cols - 3; c > 2 && !fakePlaced; c--) {
+                    if (grid[r][c] === 0 && !path.some(p => p.r === r && p.c === c)) {
+                        grid[r][c] = 6;
+                        fakePlaced = true;
+                    }
+                }
             }
             return grid;
         }
@@ -391,15 +399,12 @@
         function buildEnvironment() {
             const wallTex = createWallpaperTexture();
             const floorTex = createPoolTileTexture();
-            const trapTex = createCheckerTexture();
 
             const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 1.0 });
             const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.2, metalness: 0.1 });
-            const trapMat = new THREE.MeshStandardMaterial({ map: trapTex, roughness: 0.8 }); 
 
             const wallGeo = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
             const floorGeo = new THREE.BoxGeometry(CELL_SIZE, FLOOR_HEIGHT, CELL_SIZE); 
-            const trapGeo = new THREE.BoxGeometry(PLATFORM_SIZE, FLOOR_HEIGHT, PLATFORM_SIZE); 
 
             for (let r = 0; r < GRID_ROWS; r++) {
                 for (let c = 0; c < GRID_COLS; c++) {
@@ -409,27 +414,32 @@
                     if (cell === 1) { 
                         const wall = new THREE.Mesh(wallGeo, wallMat); wall.position.set(x, WALL_HEIGHT / 2 - 2, z); 
                         scene.add(wall); solidBoxes.push(new THREE.Box3().setFromObject(wall));
-                    } else if (cell === 0 || cell === 2 || cell === 3) { 
+                    } else if (cell === 0 || cell === 2 || cell === 3 || cell === 6) { 
                         const floor = new THREE.Mesh(floorGeo, floorMat); floor.position.set(x, FLOOR_HEIGHT / 2, z);
                         scene.add(floor); solidBoxes.push(new THREE.Box3().setFromObject(floor));
                         if (cell === 2) { 
                             startPosWorld.set(x, FLOOR_HEIGHT + PLAYER_HEIGHT, z); camera.position.copy(startPosWorld); physicalY = startPosWorld.y;
-                        } else if (cell === 3) { 
-                            portalGroup = new THREE.Group(); portalGroup.position.set(x, FLOOR_HEIGHT + 2.0, z);
-                            goalMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 0), new THREE.MeshStandardMaterial({ color: 0xff00ff, emissive: 0xff1493, emissiveIntensity: 1.5, wireframe: true }));
+                        } else if (cell === 3 || cell === 6) { 
+                            const pg = new THREE.Group(); pg.position.set(x, FLOOR_HEIGHT + 2.0, z);
+                            const gMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 0), new THREE.MeshStandardMaterial({ color: 0xff00ff, emissive: 0xff1493, emissiveIntensity: 1.5, wireframe: true }));
                             const coreMesh = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.0 }));
-                            portalGroup.add(goalMesh); portalGroup.add(coreMesh);
-                            portalGroup.add(new THREE.PointLight(0xff1493, 3.0, 15));
-                            scene.add(portalGroup); goalBox = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, FLOOR_HEIGHT + 2.0, z), new THREE.Vector3(2.5, 4, 2.5));
+                            pg.add(gMesh); pg.add(coreMesh);
+                            pg.add(new THREE.PointLight(0xff1493, 3.0, 15));
+                            scene.add(pg); 
+                            
+                            const gBox = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, FLOOR_HEIGHT + 2.0, z), new THREE.Vector3(2.5, 4, 2.5));
+                            
+                            if (cell === 3) {
+                                portalGroup = pg; goalMesh = gMesh; goalBox = gBox;
+                            } else {
+                                fakePortalGroup = pg; fakeGoalMesh = gMesh; fakeGoalBox = gBox;
+                            }
                         }
                     } else if (cell === 5) { 
                         const cpMat = new THREE.MeshStandardMaterial({ color: 0xd97706, emissive: 0xb45309, emissiveIntensity: 0.6 });
                         const cpFloor = new THREE.Mesh(floorGeo, cpMat); cpFloor.position.set(x, FLOOR_HEIGHT / 2, z);
                         scene.add(cpFloor); solidBoxes.push(new THREE.Box3().setFromObject(cpFloor));
                         scene.add(new THREE.PointLight(0xd97706, 2.0, 12)).position.set(x, FLOOR_HEIGHT + 1, z);
-                    } else if (cell === 4) { 
-                        const plat = new THREE.Mesh(trapGeo, trapMat); plat.position.set(x, (Math.random() * 2.0) - 1.0 + FLOOR_HEIGHT/2, z);
-                        scene.add(plat); solidBoxes.push(new THREE.Box3().setFromObject(plat));
                     }
                 }
             }
@@ -443,11 +453,11 @@
             const limbGeo = new THREE.BoxGeometry(0.2, 0.8, 0.2);
 
             let spawned = 0;
-            while(spawned < 6) { // 6마리 스폰
+            while(spawned < 10) { // 10마리로 스폰 증가
                 let r = Math.floor(Math.random() * GRID_ROWS);
                 let c = Math.floor(Math.random() * GRID_COLS);
                 
-                // 시작지점, 출구, 함정이 아닌 일반 길에만 스폰
+                // 시작지점, 출구, 가짜 출구 등이 아닌 일반 길에만 스폰
                 if (mazeGrid[r][c] === 0 && r > 4 && c > 4 && r < GRID_ROWS - 4 && c < GRID_COLS - 4) {
                     const group = new THREE.Group();
                     
@@ -640,12 +650,12 @@
                     const x = (c - GRID_COLS / 2) * CELL_SIZE, z = (r - GRID_ROWS / 2) * CELL_SIZE;
                     if (mazeGrid[r][c] === 1) { ctx.fillStyle = '#d1c083'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); } 
                     else if (mazeGrid[r][c] === 5) { ctx.fillStyle = '#b45309'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); }
-                    else if (mazeGrid[r][c] === 4) { ctx.fillStyle = '#ea580c'; ctx.fillRect((x - PLATFORM_SIZE/2) * scale, (z - PLATFORM_SIZE/2) * scale, PLATFORM_SIZE * scale, PLATFORM_SIZE * scale); } 
                     else { ctx.fillStyle = '#e0ffff'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); }
                 }
             }
             
             if (portalGroup) { ctx.fillStyle = '#ff1493'; ctx.beginPath(); ctx.arc(portalGroup.position.x * scale, portalGroup.position.z * scale, 2.5 * scale, 0, Math.PI * 2); ctx.fill(); }
+            if (fakePortalGroup) { ctx.fillStyle = '#ff1493'; ctx.beginPath(); ctx.arc(fakePortalGroup.position.x * scale, fakePortalGroup.position.z * scale, 2.5 * scale, 0, Math.PI * 2); ctx.fill(); } // 가짜도 진짜와 똑같이 미니맵에 표시
             
             // 미니맵에 괴물을 붉은 점으로 표시
             for (let m of monsters) {
@@ -831,9 +841,23 @@
                     finalTimeInSeconds = Math.floor((Date.now() - startTime) / 1000);
                     document.getElementById('final-time').innerText = `${finalTimeInSeconds}초`; document.getElementById('death-count').innerText = `${falls}회`;
                 }
+
+                // 가짜 탈출구에 닿았을 때
+                if (fakeGoalBox && getPlayerAABB(px, physicalY, pz).intersectsBox(fakeGoalBox)) {
+                    const msg = document.createElement('div');
+                    msg.innerText = "당신은 간고등어!";
+                    msg.className = "absolute top-1/3 left-1/2 transform -translate-x-1/2 text-red-500 font-extrabold text-2xl md:text-3xl drop-shadow-lg z-50 bg-black/90 px-8 py-4 rounded-xl border border-red-600";
+                    document.body.appendChild(msg);
+                    setTimeout(() => msg.remove(), 2500);
+                    
+                    camera.position.z += 2; // 무한 데스 루프 방지용 약간 밀어내기
+                    killPlayer(); 
+                }
+
                 drawMinimap();
             }
             if (portalGroup && goalMesh) { goalMesh.rotation.x += 0.01; goalMesh.rotation.y += 0.02; goalMesh.rotation.z += 0.01; }
+            if (fakePortalGroup && fakeGoalMesh) { fakeGoalMesh.rotation.x += 0.01; fakeGoalMesh.rotation.y += 0.02; fakeGoalMesh.rotation.z += 0.01; }
             prevTime = time; renderer.render(scene, camera);
         }
 
