@@ -80,6 +80,8 @@
         .mobile-btn { width: 60px; height: 60px; border-radius: 50%; background: rgba(0,0,0,0.1); border: 2px solid rgba(0,0,0,0.3); color: #333; font-weight: bold; font-size: 13px; display: flex; justify-content: center; align-items: center; user-select: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .mobile-btn.active-toggle { background: rgba(217, 119, 6, 0.3); border-color: #d97706; color: #d97706; }
 
+        #ytplayer-container { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; z-index: -100; }
+
         @media (max-width: 768px) {
             #minimap-wrapper { width: 100px; height: 100px; }
             #pc-instructions { display: none; }
@@ -99,8 +101,7 @@
 <body>
     <div id="fall-overlay"></div>
     
-    <!-- 경로와 확장자를 videoplayback.mp3로 변경했습니다. -->
-    <audio id="bgm" src="videoplayback.mp3" loop></audio>
+    <div id="ytplayer-container"></div>
 
     <div id="hud">
         <div class="flex justify-between items-start w-full">
@@ -180,39 +181,36 @@
         </div>
     </div>
 
+    <script>
+        window.ytPlayer = null;
+        window.ytPlayerReady = false;
+
+        var tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        var firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+        function onYouTubeIframeAPIReady() {
+            window.ytPlayer = new YT.Player('ytplayer-container', {
+                height: '100', width: '100',
+                videoId: 'XnURPQOA3qk',
+                playerVars: { 'autoplay': 0, 'controls': 0, 'loop': 1, 'playlist': 'XnURPQOA3qk', 'rel': 0, 'showinfo': 0 },
+                events: {
+                    'onReady': function(event) {
+                        event.target.setVolume(40); // 브금 볼륨 (0~100)
+                        window.ytPlayerReady = true;
+                    }
+                }
+            });
+        }
+    </script>
+
     <script type="module">
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
         
-        const bgmAudio = document.getElementById('bgm');
-        bgmAudio.volume = 0.5;
-
         let camera, scene, renderer, controls;
         let flashlight, portalGroup, goalMesh;
-        let isPlaying = false, gameWon = false;
-        let startTime = null, finalTimeInSeconds = 0;
-        let falls = 0;
-        let deviceType = null;
-
-        // 이동 제어
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-        let isSprinting = false;
-        
-        // 모바일 제어
-        let joystickVector = { x: 0, y: 0 };
-        let activeTouches = {}, joystickTouchId = null, lookTouchId = null;
-        let joystickBaseX = 0, joystickBaseY = 0; const MAX_JOYSTICK_DIST = 30;
-
-        // 물리 변수 (점프 밸런스 완화)
-        const WALK_SPEED = 20.0, SPRINT_SPEED = 38.0, GRAVITY = 85.0, JUMP_FORCE = 28.0;
-        const velocity = new THREE.Vector3();
-        let prevTime = performance.now(), physicalY = 0, canJump = false, bobTimer = 0;
-
-        let checkpointReached = false;
-        let checkpointRespawnsLeft = 3;
-        let activeRespawnPos = new THREE.Vector3();
-
-        const MAX_STAMINA = 100; let stamina = MAX_STAMINA;
         const STAMINA_DRAIN_RATE = 20, STAMINA_RECOVERY_RATE = 30; let isExhausted = false;
 
         const GRID_ROWS = 31, GRID_COLS = 31;
@@ -220,6 +218,42 @@
         const PLAYER_HEIGHT = 1.6, PLAYER_SIZE = 0.6;
         let mazeGrid = [], solidBoxes = [], goalBox;
         let startPosWorld = new THREE.Vector3();
+
+        // --- 여기서부터 누락되었던 필수 게임 상태 변수들을 다시 선언합니다 ---
+        let physicalY = 0;
+        let velocity = new THREE.Vector3();
+        let canJump = false;
+        let bobTimer = 0;
+        let isPlaying = false;
+        let gameWon = false;
+        let startTime = null;
+        let prevTime = performance.now();
+        let falls = 0;
+        let finalTimeInSeconds = 0;
+        let deviceType = 'pc';
+
+        // 키보드 및 이동 상태 변수
+        let moveForward = false, moveBackward = false;
+        let moveLeft = false, moveRight = false;
+        let isSprinting = false;
+
+        // 물리 엔진 상수
+        const WALK_SPEED = 20.0, SPRINT_SPEED = 27.0, GRAVITY = 85.0, JUMP_FORCE = 25.0;
+        const MAX_STAMINA = 100;
+        let stamina = MAX_STAMINA;
+
+        // 체크포인트 변수
+        let checkpointReached = false;
+        let checkpointRespawnsLeft = 3;
+        let activeRespawnPos = new THREE.Vector3();
+
+        // 모바일 조이스틱 변수
+        let joystickVector = { x: 0, y: 0 };
+        let activeTouches = {};
+        let joystickTouchId = null, lookTouchId = null;
+        let joystickBaseX = 0, joystickBaseY = 0;
+        const MAX_JOYSTICK_DIST = 40;
+        // -----------------------------------------------------------
 
         function loadRankings() {
             let ranks = JSON.parse(localStorage.getItem('dreamcore_ranks')) || [];
@@ -289,38 +323,24 @@
             canvas.width = 256; canvas.height = 256;
             const ctx = canvas.getContext('2d');
             
-            // 1. 바탕색 (조금 더 칙칙하고 습기찬 노란색)
             ctx.fillStyle = '#d1c083'; 
             ctx.fillRect(0, 0, 256, 256);
-
-            // 2. 백룸 특유의 약간 어두운 세로 줄무늬 베이스
             ctx.fillStyle = '#c0ae6f';
-            for(let x = 0; x < 256; x += 32) {
-                ctx.fillRect(x, 0, 16, 256);
-            }
-
-            // 3. 백룸의 상징적인 다이아몬드 기하학 패턴
-            ctx.fillStyle = '#a69251'; // 좀 더 진한 색
+            for(let x = 0; x < 256; x += 32) { ctx.fillRect(x, 0, 16, 256); }
+            ctx.fillStyle = '#a69251';
             for(let y = 0; y < 256; y += 64) {
                 for(let x = 0; x < 256; x += 32) {
-                    // 열(Column)마다 지그재그로 교차 배열
                     let offsetY = (x / 32) % 2 === 0 ? 0 : 32; 
-                    
-                    // 다이아몬드 무늬
                     ctx.beginPath();
                     ctx.moveTo(x + 16, y + offsetY + 8);
                     ctx.lineTo(x + 24, y + offsetY + 24);
                     ctx.lineTo(x + 16, y + offsetY + 40);
                     ctx.lineTo(x + 8, y + offsetY + 24);
                     ctx.fill();
-
-                    // 다이아몬드 위아래 작은 점 장식
                     ctx.fillRect(x + 14, y + offsetY + 2, 4, 4);
                     ctx.fillRect(x + 14, y + offsetY + 42, 4, 4);
                 }
             }
-
-            // 4. 얼룩덜룩하고 오래된 느낌의 노이즈 (벽이 낡고 곰팡이 핀 느낌)
             for (let n = 0; n < 800; n++) {
                 ctx.fillStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.05)' : 'rgba(100,80,0,0.06)';
                 let nx = Math.random() * 256;
@@ -332,7 +352,6 @@
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
             texture.repeat.set(3, 3);
-            
             return texture;
         }
 
@@ -340,7 +359,7 @@
         function createPoolTileTexture() {
             const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 256;
             const ctx = canvas.getContext('2d'); 
-            ctx.fillStyle = '#e0ffff'; ctx.fillRect(0, 0, 256, 256); // Light cyan
+            ctx.fillStyle = '#e0ffff'; ctx.fillRect(0, 0, 256, 256); 
             ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4;
             for(let x = 0; x <= 256; x += 32) {
                 ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 256); ctx.stroke();
@@ -357,7 +376,7 @@
             const ctx = canvas.getContext('2d');
             for(let y = 0; y < 128; y += 64) {
                 for(let x = 0; x < 128; x += 64) {
-                    ctx.fillStyle = ((x/64 + y/64) % 2 === 0) ? '#ffffff' : '#ff69b4'; // 백/핑크
+                    ctx.fillStyle = ((x/64 + y/64) % 2 === 0) ? '#ffffff' : '#ff69b4';
                     ctx.fillRect(x, y, 64, 64);
                 }
             }
@@ -372,7 +391,7 @@
             const trapTex = createCheckerTexture();
 
             const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 1.0 });
-            const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.2, metalness: 0.1 }); // 반짝이는 타일
+            const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.2, metalness: 0.1 });
             const trapMat = new THREE.MeshStandardMaterial({ map: trapTex, roughness: 0.8 }); 
 
             const wallGeo = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
@@ -393,7 +412,6 @@
                         if (cell === 2) { 
                             startPosWorld.set(x, FLOOR_HEIGHT + PLAYER_HEIGHT, z); camera.position.copy(startPosWorld); physicalY = startPosWorld.y;
                         } else if (cell === 3) { 
-                            // 기괴한 회전 눈동자/다면체 (출구)
                             portalGroup = new THREE.Group(); portalGroup.position.set(x, FLOOR_HEIGHT + 2.0, z);
                             goalMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 0), new THREE.MeshStandardMaterial({ color: 0xff00ff, emissive: 0xff1493, emissiveIntensity: 1.5, wireframe: true }));
                             const coreMesh = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.0 }));
@@ -402,7 +420,6 @@
                             scene.add(portalGroup); goalBox = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, FLOOR_HEIGHT + 2.0, z), new THREE.Vector3(2.5, 4, 2.5));
                         }
                     } else if (cell === 5) { 
-                        // 체크포인트 발판 (눈동자 텍스처 느낌)
                         const cpMat = new THREE.MeshStandardMaterial({ color: 0xd97706, emissive: 0xb45309, emissiveIntensity: 0.6 });
                         const cpFloor = new THREE.Mesh(floorGeo, cpMat); cpFloor.position.set(x, FLOOR_HEIGHT / 2, z);
                         scene.add(cpFloor); solidBoxes.push(new THREE.Box3().setFromObject(cpFloor));
@@ -418,12 +435,12 @@
         function init() {
             loadRankings();
             scene = new THREE.Scene(); 
-            scene.background = new THREE.Color(0xffc0cb); // 파스텔 핑크/피치 배경
-            scene.fog = new THREE.FogExp2(0xffc0cb, 0.05); // 짙은 핑크 안개 (미로 밖을 알 수 없게)
+            scene.background = new THREE.Color(0xffc0cb); // 파스텔 핑크 안개
+            scene.fog = new THREE.FogExp2(0xffc0cb, 0.05); 
             
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            // 드림코어식 밝고 플랫한 조명
+            // 밝고 플랫한 조명
             scene.add(new THREE.AmbientLight(0xffffff, 0.9)); 
             scene.add(camera);
 
@@ -457,9 +474,9 @@
             document.getElementById('device-screen').style.display = 'none';
             isPlaying = true; if (!startTime) startTime = Date.now();
             
-            // 음악 재생 로직 (오류 콘솔 처리)
-            if (bgmAudio.paused) {
-                bgmAudio.play().catch(e => console.log("음악 재생에 실패했습니다 (브라우저 정책):", e));
+            // 유튜브 브금 재생
+            if (window.ytPlayerReady && window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
+                window.ytPlayer.playVideo();
             }
             
             checkpointReached = false;
@@ -626,7 +643,7 @@
                 const currentlySprinting = wantsToSprint && !isExhausted && stamina > 0; 
                 const currentMoveSpeed = (currentlySprinting ? SPRINT_SPEED : WALK_SPEED) * speedMultiplier;
                 
-                // 스테미너 UI 퍼센트 및 바 업데이트
+                // 스테미너 UI 업데이트
                 document.getElementById('stamina-fill').style.width = `${Math.round(stamina)}%`;
                 document.getElementById('stamina-percent').innerText = `${Math.round(stamina)}%`;
                 if(isExhausted) document.getElementById('stamina-fill').classList.add('exhausted'); else document.getElementById('stamina-fill').classList.remove('exhausted');
@@ -665,8 +682,10 @@
                     gameWon = true; isPlaying = false; if(deviceType === 'pc') controls.unlock();
                     document.getElementById('mobile-controls').style.display = 'none'; document.getElementById('win-screen').style.display = 'flex';
                     
-                    bgmAudio.pause();
-                    bgmAudio.currentTime = 0;
+                    // 탈출 시 브금 정지
+                    if (window.ytPlayerReady && window.ytPlayer && typeof window.ytPlayer.pauseVideo === 'function') {
+                        window.ytPlayer.pauseVideo();
+                    }
                     
                     finalTimeInSeconds = Math.floor((Date.now() - startTime) / 1000);
                     document.getElementById('final-time').innerText = `${finalTimeInSeconds}초`; document.getElementById('death-count').innerText = `${falls}회`;
