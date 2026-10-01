@@ -453,7 +453,7 @@
             const limbGeo = new THREE.BoxGeometry(0.2, 0.8, 0.2);
 
             let spawned = 0;
-            while(spawned < 10) { // 10마리로 스폰 증가
+            while(spawned < 6) { // 6마리로 스폰 변경
                 let r = Math.floor(Math.random() * GRID_ROWS);
                 let c = Math.floor(Math.random() * GRID_COLS);
                 
@@ -518,6 +518,25 @@
             renderer.setSize(window.innerWidth, window.innerHeight); document.body.appendChild(renderer.domElement);
             window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
+            // PC 컨트롤러 초기화 (중복 생성을 막기 위해 init 함수 안으로 이동)
+            controls = new PointerLockControls(camera, document.body);
+            controls.addEventListener('unlock', () => { 
+                if(!gameWon) { 
+                    isPlaying = false; 
+                    document.getElementById('device-screen').style.display = 'flex'; 
+                    if (window.ytPlayerReady && window.ytPlayer && typeof window.ytPlayer.pauseVideo === 'function') {
+                        window.ytPlayer.pauseVideo();
+                    }
+                }
+            });
+            
+            // 키보드 이벤트 리스너 (중복 방지)
+            document.addEventListener('keydown', (e) => {
+                if(!isPlaying) return;
+                switch(e.code) { case 'KeyW': moveForward=true; break; case 'KeyA': moveLeft=true; break; case 'KeyS': moveBackward=true; break; case 'KeyD': moveRight=true; break; case 'ShiftLeft': isSprinting=true; break; case 'Space': if(canJump) { velocity.y = JUMP_FORCE; canJump = false; } break; }
+            });
+            document.addEventListener('keyup', (e) => { switch(e.code) { case 'KeyW': moveForward=false; break; case 'KeyA': moveLeft=false; break; case 'KeyS': moveBackward=false; break; case 'KeyD': moveRight=false; break; case 'ShiftLeft': isSprinting=false; break; }});
+
             document.getElementById('btn-select-pc').addEventListener('click', () => { deviceType = 'pc'; setupDeviceUI(); });
             document.getElementById('btn-select-mobile').addEventListener('click', () => { deviceType = 'mobile'; setupDeviceUI(); });
             document.getElementById('start-btn').addEventListener('click', startGame);
@@ -554,23 +573,7 @@
             document.getElementById('checkpoint-info').innerHTML = '👁️ 누군가 지켜보고 있습니다... 부활: <span id="cp-count">3</span>회 남음';
 
             if(deviceType === 'pc') {
-                controls = new PointerLockControls(camera, document.body);
-                controls.addEventListener('unlock', () => { 
-                    if(!gameWon) { 
-                        isPlaying = false; 
-                        document.getElementById('device-screen').style.display = 'flex'; 
-                        if (window.ytPlayerReady && window.ytPlayer && typeof window.ytPlayer.pauseVideo === 'function') {
-                            window.ytPlayer.pauseVideo();
-                        }
-                    }
-                });
-                controls.lock();
-                
-                document.addEventListener('keydown', (e) => {
-                    if(!isPlaying) return;
-                    switch(e.code) { case 'KeyW': moveForward=true; break; case 'KeyA': moveLeft=true; break; case 'KeyS': moveBackward=true; break; case 'KeyD': moveRight=true; break; case 'ShiftLeft': isSprinting=true; break; case 'Space': if(canJump) { velocity.y = JUMP_FORCE; canJump = false; } break; }
-                });
-                document.addEventListener('keyup', (e) => { switch(e.code) { case 'KeyW': moveForward=false; break; case 'KeyA': moveLeft=false; break; case 'KeyS': moveBackward=false; break; case 'KeyD': moveRight=false; break; case 'ShiftLeft': isSprinting=false; break; }});
+                controls.lock(); // 중복 생성하지 않고 잠금(lock)만 활성화
             } else {
                 document.getElementById('mobile-controls').style.display = 'block'; document.getElementById('crosshair').style.display = 'block';
                 setupMobileTouch();
@@ -746,9 +749,31 @@
                             m.gridC = Math.round(m.mesh.position.x / CELL_SIZE) + Math.floor(GRID_COLS / 2);
                             if (m.state === 'wander') m.targetX = null; // 배회 중이면 새 목표 찾기
                         } else {
-                            m.mesh.position.x += (mx / mLen) * speed;
-                            m.mesh.position.z += (mz / mLen) * speed;
-                            m.mesh.rotation.y = Math.atan2(mx, mz); // 쫓아가는 방향 바라보기
+                            // 괴물 벽 통과 방지(충돌 검사)
+                            let nextX = m.mesh.position.x + (mx / mLen) * speed;
+                            let nextZ = m.mesh.position.z + (mz / mLen) * speed;
+                            
+                            let mBox = new THREE.Box3(
+                                new THREE.Vector3(nextX - 0.4, 0, nextZ - 0.4),
+                                new THREE.Vector3(nextX + 0.4, 2.0, nextZ + 0.4)
+                            );
+                            
+                            let collided = false;
+                            for (let box of solidBoxes) {
+                                if (mBox.intersectsBox(box)) {
+                                    collided = true; break;
+                                }
+                            }
+
+                            if (!collided) {
+                                m.mesh.position.x = nextX;
+                                m.mesh.position.z = nextZ;
+                                m.mesh.rotation.y = Math.atan2(mx, mz); // 쫓아가는 방향 바라보기
+                            } else {
+                                // 벽에 부딪히면 배회 모드로 강제 전환하여 새로운 길 탐색
+                                m.state = 'wander';
+                                m.targetX = null;
+                            }
                         }
                         
                         // 다리 움직임 애니메이션
