@@ -96,7 +96,8 @@
 <body>
     <div id="fall-overlay"></div>
     
-    <!-- 추후 배경음악 추가 시 여기에 <audio id="bgm" src="본인파일.mp3" loop></audio> 추가 가능 -->
+    <!-- 경로를 깃허브에 올린 실제 파일 이름으로 변경했습니다. -->
+    <audio id="bgm" src="videoplayback.mp4" loop></audio>
 
     <div id="hud">
         <div class="flex justify-between items-start w-full">
@@ -179,6 +180,9 @@
     <script type="module">
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        
+        const bgmAudio = document.getElementById('bgm');
+        bgmAudio.volume = 0.4; // 볼륨 조절 (0.0 ~ 1.0)
 
         let camera, scene, renderer, controls;
         let flashlight, portalGroup, goalMesh;
@@ -380,6 +384,10 @@
         function startGame() {
             document.getElementById('device-screen').style.display = 'none';
             isPlaying = true; if (!startTime) startTime = Date.now();
+            
+            if (bgmAudio.paused) {
+                bgmAudio.play().catch(e => console.log("음악 재생 브라우저 차단됨:", e));
+            }
             
             checkpointReached = false;
             checkpointRespawnsLeft = 3;
@@ -586,6 +594,10 @@
                 if (goalBox && getPlayerAABB(px, physicalY, pz).intersectsBox(goalBox)) {
                     gameWon = true; isPlaying = false; if(deviceType === 'pc') controls.unlock();
                     document.getElementById('mobile-controls').style.display = 'none'; document.getElementById('win-screen').style.display = 'flex';
+                    
+                    bgmAudio.pause();
+                    bgmAudio.currentTime = 0;
+                    
                     finalTimeInSeconds = Math.floor((Date.now() - startTime) / 1000);
                     document.getElementById('final-time').innerText = `${finalTimeInSeconds}초`; document.getElementById('death-count').innerText = `${falls}회`;
                 }
