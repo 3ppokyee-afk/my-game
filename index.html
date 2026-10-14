@@ -208,6 +208,9 @@
     <script type="module">
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         let camera, scene, renderer, controls;
         let flashlight, portalGroup, goalMesh, fakePortalGroup, fakeGoalMesh, fakeGoalBox;
@@ -231,6 +234,11 @@
         let falls = 0;
         let finalTimeInSeconds = 0;
         let deviceType = 'pc';
+
+        // 클라우드 랭킹용 글로벌 변수 설정
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        let db, auth, user;
 
         // 키보드 및 이동 상태 변수
         let moveForward = false, moveBackward = false;
@@ -258,14 +266,44 @@
         const MONSTER_SPEED = 14.0; // 걷기(20)보단 느리지만 꽤 빠른 속도
         // -----------------------------------------------------------
 
-        function loadRankings() {
-            let ranks = JSON.parse(localStorage.getItem('dreamcore_ranks')) || [];
-            let html = '';
-            ranks.slice(0, 5).forEach((r, i) => {
-                html += `<div class="text-xs text-slate-600 flex justify-between border-b border-yellow-200 py-1.5 font-bold"><span>${i+1}. ${r.name}</span> <span class="text-yellow-600 font-mono">${r.time}초</span></div>`;
-            });
-            if (!html) html = '<div class="text-xs text-slate-400 py-2 text-center">아직 깬 사람이 없습니다.</div>';
+        // 클라우드 서버에서 글로벌 랭킹을 불러오는 기능
+        async function initCloudAndLoadRankings() {
+            let html = '<div class="text-xs text-slate-400 py-2 text-center">클라우드 랭킹 연결 중... ☁️</div>';
             document.getElementById('ranking-list').innerHTML = html;
+
+            if (firebaseConfig) {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                try {
+                    // 서버 로그인
+                    const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                    if (token) await signInWithCustomToken(auth, token);
+                    else await signInAnonymously(auth);
+                    user = auth.currentUser;
+
+                    // 랭킹 데이터 불러오기
+                    const ranksRef = collection(db, 'artifacts', appId, 'public', 'data', 'rankings');
+                    const snapshot = await getDocs(ranksRef);
+                    let ranks = [];
+                    snapshot.forEach(doc => ranks.push(doc.data()));
+                    
+                    // 시간이 짧은 순서대로 정렬
+                    ranks.sort((a, b) => a.time - b.time);
+                    
+                    html = '';
+                    ranks.slice(0, 5).forEach((r, i) => {
+                        html += `<div class="text-xs text-slate-600 flex justify-between border-b border-yellow-200 py-1.5 font-bold"><span>${i+1}. ${r.name}</span> <span class="text-yellow-600 font-mono">${r.time}초</span></div>`;
+                    });
+                    if (!html) html = '<div class="text-xs text-slate-400 py-2 text-center">아직 탈출한 방랑자가 없습니다.</div>';
+                    document.getElementById('ranking-list').innerHTML = html;
+                } catch(e) {
+                    console.error(e);
+                    document.getElementById('ranking-list').innerHTML = '<div class="text-xs text-red-400 py-2 text-center">서버 연결에 실패했습니다.</div>';
+                }
+            } else {
+                document.getElementById('ranking-list').innerHTML = '<div class="text-xs text-slate-400 py-2 text-center">오프라인 모드입니다.</div>';
+            }
         }
 
         function findShortestPathBFS(grid, startR, startC, goalR, goalC) {
@@ -500,7 +538,7 @@
         }
 
         function init() {
-            loadRankings();
+            initCloudAndLoadRankings(); // 시작할 때 클라우드 랭킹 서버 가동
             scene = new THREE.Scene(); 
             scene.background = new THREE.Color(0xffc0cb); // 파스텔 핑크 안개
             scene.fog = new THREE.FogExp2(0xffc0cb, 0.05); 
@@ -541,19 +579,30 @@
             document.getElementById('btn-select-mobile').addEventListener('click', () => { deviceType = 'mobile'; setupDeviceUI(); });
             document.getElementById('start-btn').addEventListener('click', startGame);
             
-            document.getElementById('save-rank-btn').addEventListener('click', () => {
+            // 클리어 시 서버에 랭킹 저장하기
+            document.getElementById('save-rank-btn').addEventListener('click', async () => {
                 let name = document.getElementById('player-name').value || '무명방랑자';
-                let ranks = JSON.parse(localStorage.getItem('dreamcore_ranks')) || [];
-                ranks.push({ name: name, time: finalTimeInSeconds });
-                ranks.sort((a, b) => a.time - b.time);
-                localStorage.setItem('dreamcore_ranks', JSON.stringify(ranks));
+                const saveBtn = document.getElementById('save-rank-btn');
+                saveBtn.innerText = '기억을 클라우드에 새기는 중... ☁️';
+                saveBtn.disabled = true;
+
+                if (db && user) {
+                    try {
+                        const ranksRef = collection(db, 'artifacts', appId, 'public', 'data', 'rankings');
+                        await addDoc(ranksRef, {
+                            name: name,
+                            time: finalTimeInSeconds,
+                            timestamp: Date.now()
+                        });
+                    } catch(e) { console.error(e); }
+                }
                 location.reload();
             });
         }
 
         function setupDeviceUI() {
-            document.getElementById('btn-select-pc').classList.toggle('bg-yellow-300', deviceType === 'pc');
-            document.getElementById('btn-select-mobile').classList.toggle('bg-yellow-300', deviceType === 'mobile');
+            document.getElementById('btn-select-pc').classList.toggle('bg-sky-300', deviceType === 'pc');
+            document.getElementById('btn-select-mobile').classList.toggle('bg-sky-300', deviceType === 'mobile');
             document.getElementById('start-btn').style.display = 'block';
         }
 
@@ -570,7 +619,7 @@
             checkpointRespawnsLeft = 3;
             document.getElementById('checkpoint-info').classList.add('hidden');
             document.getElementById('checkpoint-info').classList.remove('opacity-50');
-            document.getElementById('checkpoint-info').innerHTML = '👁️ 누군가 지켜보고 있습니다... 부활: <span id="cp-count">3</span>회 남음';
+            document.getElementById('checkpoint-info').innerHTML = '🌊 물결이 느껴집니다... 부활: <span id="cp-count">3</span>회 남음';
 
             if(deviceType === 'pc') {
                 controls.lock(); // 중복 생성하지 않고 잠금(lock)만 활성화
@@ -651,18 +700,18 @@
                     if (Math.abs(r - playerGridR) > 8 || Math.abs(c - playerGridC) > 8) continue;
                     if (!hasLineOfSight(playerGridR, playerGridC, r, c, mazeGrid)) continue;
                     const x = (c - GRID_COLS / 2) * CELL_SIZE, z = (r - GRID_ROWS / 2) * CELL_SIZE;
-                    if (mazeGrid[r][c] === 1) { ctx.fillStyle = '#d1c083'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); } 
-                    else if (mazeGrid[r][c] === 5) { ctx.fillStyle = '#b45309'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); }
+                    if (mazeGrid[r][c] === 1) { ctx.fillStyle = '#ffffff'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); } 
+                    else if (mazeGrid[r][c] === 5) { ctx.fillStyle = '#0284c7'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); }
                     else { ctx.fillStyle = '#e0ffff'; ctx.fillRect((x - CELL_SIZE/2) * scale, (z - CELL_SIZE/2) * scale, CELL_SIZE * scale, CELL_SIZE * scale); }
                 }
             }
             
-            if (portalGroup) { ctx.fillStyle = '#ff1493'; ctx.beginPath(); ctx.arc(portalGroup.position.x * scale, portalGroup.position.z * scale, 2.5 * scale, 0, Math.PI * 2); ctx.fill(); }
-            if (fakePortalGroup) { ctx.fillStyle = '#ff1493'; ctx.beginPath(); ctx.arc(fakePortalGroup.position.x * scale, fakePortalGroup.position.z * scale, 2.5 * scale, 0, Math.PI * 2); ctx.fill(); } // 가짜도 진짜와 똑같이 미니맵에 표시
+            if (portalGroup) { ctx.fillStyle = '#00ffff'; ctx.beginPath(); ctx.arc(portalGroup.position.x * scale, portalGroup.position.z * scale, 2.5 * scale, 0, Math.PI * 2); ctx.fill(); }
+            if (fakePortalGroup) { ctx.fillStyle = '#00ffff'; ctx.beginPath(); ctx.arc(fakePortalGroup.position.x * scale, fakePortalGroup.position.z * scale, 2.5 * scale, 0, Math.PI * 2); ctx.fill(); } 
             
-            // 미니맵에 괴물을 붉은 점으로 표시
+            // 미니맵에 괴물을 시안색 점으로 표시
             for (let m of monsters) {
-                ctx.fillStyle = '#ff0000';
+                ctx.fillStyle = '#00ffff';
                 ctx.beginPath();
                 ctx.arc(m.mesh.position.x * scale, m.mesh.position.z * scale, 3 * scale, 0, Math.PI * 2);
                 ctx.fill();
@@ -681,7 +730,7 @@
                 document.getElementById('cp-count').innerText = checkpointRespawnsLeft;
                 if(checkpointRespawnsLeft === 0) {
                     document.getElementById('checkpoint-info').classList.add('opacity-50');
-                    document.getElementById('checkpoint-info').innerHTML = '더 이상 당신을 지켜보지 않습니다 ☁️';
+                    document.getElementById('checkpoint-info').innerHTML = '더 이상 물결이 느껴지지 않습니다...';
                 }
             } else {
                 camera.position.copy(startPosWorld); physicalY = startPosWorld.y; 
@@ -806,8 +855,8 @@
                     document.getElementById('checkpoint-info').classList.remove('hidden');
                     
                     const msg = document.createElement('div');
-                    msg.innerText = "👁️ 시선이 느껴집니다... (이속 증가)";
-                    msg.className = "absolute top-1/4 left-1/2 transform -translate-x-1/2 text-yellow-900 font-extrabold text-xl md:text-2xl drop-shadow-md z-50 animate-pulse bg-yellow-50/90 px-5 py-2 rounded-full border border-yellow-500";
+                    msg.innerText = "🌊 시원한 물결이 감쌉니다... (이속 증가)";
+                    msg.className = "absolute top-1/4 left-1/2 transform -translate-x-1/2 text-sky-900 font-extrabold text-xl md:text-2xl drop-shadow-md z-50 animate-pulse bg-sky-50/90 px-5 py-2 rounded-full border border-sky-500";
                     document.body.appendChild(msg);
                     setTimeout(() => msg.remove(), 2500);
                 }
