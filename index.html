@@ -879,10 +879,7 @@
                 // 공간 일렁임(4) 효과
                 if (isRipple) {
                     rippleTime += delta * 5.0;
-                    bobOffset += Math.sin(rippleTime) * 0.3; // 화면 상하 울렁임
-                    camera.rotation.z = Math.sin(rippleTime * 0.8) * 0.1; // 좌우 갸우뚱
-                } else {
-                    camera.rotation.z = 0; // 정상 복구
+                    bobOffset += Math.sin(rippleTime) * 0.4; // 화면 상하 울렁임만 적용
                 }
                 camera.position.y = physicalY + bobOffset;
 
