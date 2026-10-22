@@ -743,7 +743,8 @@
             currentEvent = -1;
             isRipple = false;
             isAdrenaline = false;
-            camera.rotation.z = 0; 
+            
+            // 카메라 시점을 강제로 꺾어버리던 원인(camera.rotation.z = 0) 완벽히 삭제
             
             if (currentTheme === 'pool') {
                 scene.fog.density = 0.04;
